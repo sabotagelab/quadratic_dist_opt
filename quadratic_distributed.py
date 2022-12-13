@@ -1,64 +1,60 @@
+import argparse
+
 import cvxpy as cp
 import numpy as np
 import matplotlib.pyplot as plt
 
 
 np.random.seed(42)
-m, n = 6, 6
+
+
+parser = argparse.ArgumentParser(description='Distributed Optimization')
+parser.add_argument('--N', type=int, default=3)
+parser.add_argument('--alpha', type=float, default=1)
+parser.add_argument('--beta', type=float, default=1)
+parser.add_argument('--gamma', type=float, default=1)
+parser.add_argument('--kappa', type=float, default=1)
+parser.add_argument('--eps_bounds', type=float, default=1)
+parser.add_argument('--r', type=float, default=5)
+parser.add_argument('--c', type=float, default=1)
+parser.add_argument('--Ubox', type=float, default=10)
+parser.add_argument('--iter', type=int, default=10)
+
+args = parser.parse_args()
+print(args)
+
+
+N = args.N
+n = N*2
 
 Q = np.random.randn(n, n)   # variable for quadratic objective
 Q = Q.T @ Q
 
 a = np.random.rand(n)
 
-alpha = 1   # parameter for fairness constraint
-beta = 1    # parameter for weighting of obstacle avoidance constraint
-gamma = 1   # parameter for smoothmin in calculating obstacle avoidance constraint
-kappa = 1   # parameter for weighting change in epsilon for local problem
-eps_bounds = 1  # bounds for eps in an iteration
+alpha = args.alpha   # parameter for fairness constraint
+beta = args.beta    # parameter for weighting of obstacle avoidance constraint
+gamma = args.gamma   # parameter for smoothmin in calculating obstacle avoidance constraint
+kappa = args.kappa   # parameter for weighting change in epsilon for local problem
+eps_bounds = args.eps_bounds  # bounds for eps in an iteration
 
-r = 5  # radius of circle
-c = np.array([1, 1])  # center of circle
-Ubox = 10  # box constraint
-
-
-# print('Central problem')
-# c_stack = np.array([1, 1, 1, 1, 1, 1])  # center of circle replicated 3 times
-# u = cp.Variable(n)
-# u_min = cp.Variable(2)
-# objective = cp.Minimize(cp.quad_form(u, Q) + \
-# (alpha/n) * cp.sum_squares(u - cp.sum(u)/n) + \
-#  a.T @ u )#- \
- #-(cp.square(cp.norm(2*u[0:2] - c)) - r*r))
-#  -1/gamma * cp.log(cp.exp(-gamma*(cp.square(cp.norm(2*u[0:2] - c)) - r*r)) +
-# cp.exp(-gamma*(cp.square(cp.norm(2*u[2:4] - c)) - r*r)) +
-# cp.exp(-gamma*(cp.square(cp.norm(2*u[4:] - c)) - r*r))) )
-
-# constraints = [B @ x <= b]
-# constraints = [u <= Ubox, -Ubox <= u]
-# prob = cp.Problem(objective, constraints)
-# prob.solve(solver='CVXOPT', verbose=True)
-# print("\nThe optimal value is", prob.value)
-# print("A solution u is")
-# print(u.value)
-# print(np.dot(u.value, np.dot(Q, u.value)))
+r = args.r  # radius of circle
+c = np.array([args.c, args.c])  # center of circle
+Ubox = args.Ubox  # box constraint
 
 
 
-print('Distributed Problem, 3 Agents')
-agents_prev_eps = {0: cp.Parameter(2, value=np.zeros(2)),
-1: cp.Parameter(2, value=np.zeros(2)),
-2: cp.Parameter(2, value=np.zeros(2))
-}
+print('Distributed Problem, {} Agents'.format(N))
+agents_prev_eps = {}
+for i in range(N):
+    agents_prev_eps[i] = cp.Parameter(2, value=np.zeros(2))
 
 init_u = np.random.randn(n)
-agents_prev_u = {0: cp.Parameter(6, value=np.copy(init_u)),
-1: cp.Parameter(6, value=np.copy(init_u)),
-2: cp.Parameter(6, value=np.copy(init_u)),
-}
+agents_prev_u = {}
+for i in range(N):
+    agents_prev_u[i] = cp.Parameter(n, value=np.copy(init_u))
 
-
-def generate_agent_variable_stacks():
+def generate_agent_variable_stacks(N):
     """
 
     :return:
@@ -69,74 +65,61 @@ def generate_agent_variable_stacks():
     agent_stacks = {}
     agent_eps = {}
 
-    # agent 1 variable
-    eps1 = cp.Variable(2)
-    eps1_zeros = cp.Parameter(4, value=np.zeros(4))
-    agent_stacks[0] = cp.hstack([eps1, eps1_zeros])
-    agent_eps[0] = eps1
+    for i in range(N):
+        eps = cp.Variable(2)
+        if i == 0:
+            eps_zeros_after = cp.Parameter(n-2, value=np.zeros(2*(N-1)))
+            stack = cp.hstack([eps, eps_zeros_after])
+        elif i < N-1:
+            eps_zeros_before = cp.Parameter(2*i, value=np.zeros(2 * i))
+            eps_zeros_after = cp.Parameter(2 * (N-1-i), value=np.zeros(2 * (N-1-i)))
+            stack = cp.hstack([eps_zeros_before, eps, eps_zeros_after])
+        else:
+            eps_zeros_before = cp.Parameter(2 * (N - 1), value=np.zeros(2 * (N - 1)))
+            stack = cp.hstack([eps_zeros_before, eps])
 
-    # agent 2 variable
-    eps2 = cp.Variable(2)
-    eps2_zeros1 = cp.Parameter(2, value=np.zeros(2))
-    eps2_zeros2 = cp.Parameter(2, value=np.zeros(2))
-    agent_stacks[1] =  cp.hstack([eps2_zeros1, eps2, eps2_zeros2])
-    agent_eps[1] = eps2
-
-    # agent 3 variable
-    eps3 = cp.Variable(2)
-    eps3_zeros1 = cp.Parameter(4, value=np.zeros(4))
-    agent_stacks[2] =  cp.hstack([eps3_zeros1, eps3])
-    agent_eps[2] = eps3
+        agent_stacks[i] = stack
+        agent_eps[i] = eps
 
     return agent_stacks, agent_eps
 
 
 # Distributed solve
 global_solution = []
-agent_solutions = {0: [], 1: [], 2: []}
+agent_solutions = {i: [] for i in range(N)}
+
+
 for iter in range(10):
     print('Iter {}'.format(iter))
-    agent_stacks, agent_eps = generate_agent_variable_stacks()
-    solved_values = np.zeros(6)
-    for i in range(3):
+    agent_stacks, agent_eps = generate_agent_variable_stacks(N)
+    solved_values = np.zeros(n)
+    for i in range(N):
         stack = agent_stacks[i]
 
         other_agent_vals = agents_prev_u[i].value
-        other_agent_vals = cp.Parameter(6, value=other_agent_vals)
+        other_agent_vals = cp.Parameter(n, value=other_agent_vals)
         agent_vals_my_change = other_agent_vals + stack
 
         # Gradient of Quadratic Objective
         Jobj = cp.Parameter(n, value = 2*np.dot(Q, agents_prev_u[i].value))
 
         # Gradient of Fairness Constraint (derivative of variance of energy)
-        if i == 0:
-            anrg = agents_prev_u[i].value[0:2]
-        elif i == 1:
-            anrg = agents_prev_u[i].value[2:4]
-        else:
-            anrg = agents_prev_u[i].value[4:]
-        fairness_partial = np.linalg.norm(anrg) - np.linalg.norm(np.mean(agents_prev_u[i].value.reshape(3, 2), axis=0))
-        Jfair = cp.Parameter(value=((2/(n-1)) * fairness_partial))
+        anrg = agents_prev_u[i].value[i*2:i*2+2]
 
+        fairness_partial = np.linalg.norm(anrg) - np.linalg.norm(np.mean(agents_prev_u[i].value.reshape(int(n/2), 2), axis=0))
+        Jfair = cp.Parameter(value=((2/(N-1)) * fairness_partial))
 
         # Gradient of Obstacle Constraint (derivative of smooth min)
-        denom = np.exp(-gamma * np.linalg.norm(agents_prev_u[i].value[0:2] - c) ** 2) + \
-                np.exp(-gamma * np.linalg.norm(agents_prev_u[i].value[2:4] - c) ** 2) +\
-                np.exp(-gamma * np.linalg.norm(agents_prev_u[i].value[4:] - c) ** 2)
-        if i == 0:
-            # aobs = 2* -gamma**2 * agents_prev_u[i].value[0:2] * \
-            #        np.exp(-gamma * np.linalg.norm(agents_prev_u[i].value[0:2] - c))
-            aobs = 2* -gamma**2  * \
-                   np.exp(-gamma * np.linalg.norm(agents_prev_u[i].value[0:2] - c))
-        elif i == 1:
-            aobs = 2 * -gamma ** 2 * np.exp(
-                -gamma * np.linalg.norm(agents_prev_u[i].value[2:4] - c))
-        else:
-            aobs = 2 * -gamma ** 2 * np.exp(
-                -gamma * np.linalg.norm(agents_prev_u[i].value[4:] - c))
+        denom = 0
+        for j in range(N):
+            denom += np.exp(-gamma * np.linalg.norm(agents_prev_u[i].value[j*2:j*2+2] - c) ** 2)
+
+        aobs = 2 * -gamma ** 2 * np.exp(
+                -gamma * np.linalg.norm(agents_prev_u[i].value[i*2:i*2+2] - c))
+
         Jobs = cp.Parameter(value=aobs/denom)
 
-        objective = cp.Minimize(-1 * (stack.T @ (Jobj + alpha*Jfair + a + beta*Jobs)) +
+        objective = cp.Minimize(-1 * (stack.T @ (Jobj + alpha*Jfair + a - beta*Jobs)) +
                                 kappa * cp.norm(agent_eps[i] - agents_prev_eps[i]) ** 2
         )
 
@@ -153,38 +136,62 @@ for iter in range(10):
         solved_values = solved_values + agent_stacks[i].value
         agent_solutions[i].append(prob.value)
 
-    for i in range(3):
-        agents_prev_u[i] = cp.Parameter(6, value=init_u + np.copy(solved_values))
+    global_u = init_u + solved_values
+    main_obj = np.dot(global_u, np.dot(Q, global_u))
+
+    u_reshape = global_u.reshape(int(n/2), 2)
+    u_mean = np.mean(u_reshape, axis=0)
+    diffs = 0
+    logsum = 0
+    for i in range(N):
+        agents_prev_u[i] = cp.Parameter(n,
+                                        value=init_u + np.copy(solved_values))
         agents_prev_eps[i] = agent_eps[i]
 
-    # print('Iter {} Global Solution'.format(iter))
-    # print(solved_values)
-    # print(np.dot(solved_values, np.dot(Q, solved_values)))
-    global_u = init_u + solved_values
-    global_solution.append(np.dot(global_u, np.dot(Q, global_u))
-                           + alpha * (1/(n-1)) * np.sum(np.linalg.norm(global_u) - np.linalg.norm(np.mean(global_u)))
-                           - beta * -gamma * np.log(np.exp(-gamma * np.linalg.norm(global_u[0:2] - c) ** 2) +
-                                                   np.exp(-gamma * np.linalg.norm(global_u[2:4] - c) ** 2) +
-                                                   np.exp(-gamma * np.linalg.norm(global_u[4:] - c) ** 2)
-                                                   )
-                           )
-    # global_solution.append(prob.value)
-    # print(np.dot(A, solved_values) <= b)
+        diffs += (u_reshape[i] - u_mean)**2
+        logsum += np.exp(-gamma * ((np.linalg.norm(u_reshape[i] - c) ** 2) - r*r))
+    fairness_obj = 1/(N-1) * np.sum(diffs)
 
-# print('Final')
-# print(solved_values)
-# print(prob.value)
-# print(np.dot(init_u + solved_values, np.dot(Q, init_u + solved_values)))
+    obs_obj = -gamma * np.log(logsum)
+
+    global_solution.append(main_obj + alpha*fairness_obj - beta*obs_obj)
+
+
 
 # Plot to see convergence
 plt.plot(global_solution)
 plt.title('Centralized Solution')
-plt.show()
+plt.savefig('CentralSolution_N{}_alpha{}_beta{}_kappa{}_epsbounds{}.png'.format(N, alpha, beta, kappa, eps_bounds))
 
 plt.clf()
 
-plt.plot(agent_solutions[0])
-plt.plot(agent_solutions[1])
-plt.plot(agent_solutions[2])
+for i in range(N):
+    plt.plot(agent_solutions[i])
+
 plt.title('Agent Solutions')
-plt.show()
+plt.savefig('AgentSolutions_N{}_alpha{}_beta{}_kappa{}_epsbounds{}.png'.format(N, alpha, beta, kappa, eps_bounds))
+
+
+print(init_u)
+print('init u')
+
+print('Init Obj')
+u_reshape = init_u.reshape(int(n/2), 2)
+u_mean = np.mean(u_reshape, axis=0)
+diffs = 0
+logsum = 0
+for i in range(N):
+    diffs += (u_reshape[i] - u_mean)**2
+    logsum += np.exp(-gamma * ((np.linalg.norm(u_reshape[i] - c) ** 2) - r*r))
+fairness_obj = 1/(N-1) * np.sum(diffs)
+
+obs_obj = -gamma * np.log(logsum)
+print(main_obj + alpha*fairness_obj - beta*obs_obj)
+
+
+
+print('Final Objective Value')
+print(global_solution[-1])
+
+print('Final u')
+print(global_u)
