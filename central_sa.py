@@ -42,8 +42,8 @@ r = args.r  # radius of circle
 c = np.array([args.c, args.c])  # center of circle
 Ubox = args.Ubox  # box constraint
 
-# init_u = np.random.rand(n)
-init_u = np.array([0.73846658, 0.17136828, -0.11564828, -0.3011037 , -1.47852199, -0.71984421])
+init_u = np.random.rand(n)
+# init_u = np.array([0.73846658, 0.17136828, -0.11564828, -0.3011037 , -1.47852199, -0.71984421])
 
 def objective(u, Q, alpha, beta, gamma):
     main_obj = np.dot(u, np.dot(Q, u))
@@ -92,6 +92,7 @@ for i in range(steps):
         if accept_criteria < p_accept:
             new_u = propose_u
             init_obj = propose_u_obj
+    print(init_obj)
 
 print('init u')
 print(init_u)

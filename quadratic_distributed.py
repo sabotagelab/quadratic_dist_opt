@@ -10,15 +10,15 @@ np.random.seed(42)
 
 parser = argparse.ArgumentParser(description='Distributed Optimization')
 parser.add_argument('--N', type=int, default=3)
-parser.add_argument('--alpha', type=float, default=1)
-parser.add_argument('--beta', type=float, default=1)
+parser.add_argument('--alpha', type=float, default=.01)
+parser.add_argument('--beta', type=float, default=.01)
 parser.add_argument('--gamma', type=float, default=1)
-parser.add_argument('--kappa', type=float, default=1)
-parser.add_argument('--eps_bounds', type=float, default=1)
+parser.add_argument('--kappa', type=float, default=.1)
+parser.add_argument('--eps_bounds', type=float, default=.1)
 parser.add_argument('--r', type=float, default=5)
 parser.add_argument('--c', type=float, default=1)
 parser.add_argument('--Ubox', type=float, default=10)
-parser.add_argument('--iter', type=int, default=10)
+parser.add_argument('--iter', type=int, default=1000)
 
 args = parser.parse_args()
 print(args)
@@ -29,6 +29,7 @@ n = N*2
 
 Q = np.random.randn(n, n)   # variable for quadratic objective
 Q = Q.T @ Q
+# Q = np.eye(n)
 
 a = np.random.rand(n)
 
@@ -49,7 +50,7 @@ agents_prev_eps = {}
 for i in range(N):
     agents_prev_eps[i] = cp.Parameter(2, value=np.zeros(2))
 
-init_u = np.random.randn(n)
+init_u = np.random.randn(n)  # TODO: always enforce that init_u is feasible
 agents_prev_u = {}
 for i in range(N):
     agents_prev_u[i] = cp.Parameter(n, value=np.copy(init_u))
@@ -89,8 +90,8 @@ global_solution = []
 agent_solutions = {i: [] for i in range(N)}
 
 
-for iter in range(10):
-    print('Iter {}'.format(iter))
+for iter in range(args.iter):
+    # print('Iter {}'.format(iter))
     agent_stacks, agent_eps = generate_agent_variable_stacks(N)
     solved_values = np.zeros(n)
     for i in range(N):
@@ -114,12 +115,13 @@ for iter in range(10):
         for j in range(N):
             denom += np.exp(-gamma * np.linalg.norm(agents_prev_u[i].value[j*2:j*2+2] - c) ** 2)
 
-        aobs = 2 * -gamma ** 2 * np.exp(
+        aobs = 2 * -gamma ** 2 * agents_prev_u[i].value[i*2:i*2+2] * np.exp(
                 -gamma * np.linalg.norm(agents_prev_u[i].value[i*2:i*2+2] - c))
 
-        Jobs = cp.Parameter(value=aobs/denom)
+        Jobs = cp.Parameter(2, value=aobs/denom)
 
-        objective = cp.Minimize(-1 * (stack.T @ (Jobj + alpha*Jfair + a - beta*Jobs)) +
+        objective = cp.Minimize(-1 * (stack.T @ (Jobj + alpha*Jfair)) +
+                                -1 * beta * agent_eps[i].T @ Jobs +
                                 kappa * cp.norm(agent_eps[i] - agents_prev_eps[i]) ** 2
         )
 
@@ -136,7 +138,7 @@ for iter in range(10):
         solved_values = solved_values + agent_stacks[i].value
         agent_solutions[i].append(prob.value)
 
-    global_u = init_u + solved_values
+    global_u = agents_prev_u[0].value + solved_values
     main_obj = np.dot(global_u, np.dot(Q, global_u))
 
     u_reshape = global_u.reshape(int(n/2), 2)
@@ -144,8 +146,7 @@ for iter in range(10):
     diffs = 0
     logsum = 0
     for i in range(N):
-        agents_prev_u[i] = cp.Parameter(n,
-                                        value=init_u + np.copy(solved_values))
+        agents_prev_u[i] = cp.Parameter(n, value=global_u)
         agents_prev_eps[i] = agent_eps[i]
 
         diffs += (u_reshape[i] - u_mean)**2
@@ -172,8 +173,8 @@ plt.title('Agent Solutions')
 plt.savefig('AgentSolutions_N{}_alpha{}_beta{}_kappa{}_epsbounds{}.png'.format(N, alpha, beta, kappa, eps_bounds))
 
 
-print(init_u)
 print('init u')
+print(init_u)
 
 print('Init Obj')
 u_reshape = init_u.reshape(int(n/2), 2)
@@ -187,7 +188,6 @@ fairness_obj = 1/(N-1) * np.sum(diffs)
 
 obs_obj = -gamma * np.log(logsum)
 print(main_obj + alpha*fairness_obj - beta*obs_obj)
-
 
 
 print('Final Objective Value')
