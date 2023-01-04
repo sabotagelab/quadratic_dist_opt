@@ -51,6 +51,7 @@ for i in range(N):
     agents_prev_eps[i] = cp.Parameter(2, value=np.zeros(2))
 
 init_u = np.random.randn(n)  # TODO: always enforce that init_u is feasible
+# init_u = np.array([ 0.65978519,  0.20293734, -0.01576553, -0.39146129, -1.38308715, -0.73846262])
 agents_prev_u = {}
 for i in range(N):
     agents_prev_u[i] = cp.Parameter(n, value=np.copy(init_u))
@@ -88,6 +89,7 @@ def generate_agent_variable_stacks(N):
 # Distributed solve
 global_solution = []
 agent_solutions = {i: [] for i in range(N)}
+agent_solutions_fairness = {i: [] for i in range(N)}
 
 
 for iter in range(args.iter):
@@ -107,7 +109,8 @@ for iter in range(args.iter):
         # Gradient of Fairness Constraint (derivative of variance of energy)
         anrg = agents_prev_u[i].value[i*2:i*2+2]
 
-        fairness_partial = np.linalg.norm(anrg) - np.linalg.norm(np.mean(agents_prev_u[i].value.reshape(int(n/2), 2), axis=0))
+        # fairness_partial = np.linalg.norm(anrg) - np.linalg.norm(np.mean(agents_prev_u[i].value.reshape(int(n/2), 2), axis=0))
+        fairness_partial = np.linalg.norm(anrg) - np.mean(np.linalg.norm(agents_prev_u[i].value.reshape(int(n / 2), 2), axis=0))
         Jfair = cp.Parameter(value=((2/(N-1)) * fairness_partial))
 
         # Gradient of Obstacle Constraint (derivative of smooth min)
@@ -137,19 +140,22 @@ for iter in range(args.iter):
                 continue
         solved_values = solved_values + agent_stacks[i].value
         agent_solutions[i].append(prob.value)
+        agent_solutions_fairness[i].append(Jfair.value)
 
+    # global_u = init_u + solved_values
     global_u = agents_prev_u[0].value + solved_values
     main_obj = np.dot(global_u, np.dot(Q, global_u))
 
     u_reshape = global_u.reshape(int(n/2), 2)
-    u_mean = np.mean(u_reshape, axis=0)
+    u_mean = np.mean(np.linalg.norm(u_reshape, axis=0))
+    # u_mean = np.mean(u_reshape)
     diffs = 0
     logsum = 0
     for i in range(N):
         agents_prev_u[i] = cp.Parameter(n, value=global_u)
         agents_prev_eps[i] = agent_eps[i]
 
-        diffs += (u_reshape[i] - u_mean)**2
+        diffs += (np.linalg.norm(u_reshape[i]) - u_mean)**2
         logsum += np.exp(-gamma * ((np.linalg.norm(u_reshape[i] - c) ** 2) - r*r))
     fairness_obj = 1/(N-1) * np.sum(diffs)
 
@@ -169,8 +175,16 @@ plt.clf()
 for i in range(N):
     plt.plot(agent_solutions[i])
 
-plt.title('Agent Solutions')
+plt.title('Agent Solutions - Local Objective')
 plt.savefig('AgentSolutions_N{}_alpha{}_beta{}_kappa{}_epsbounds{}.png'.format(N, alpha, beta, kappa, eps_bounds))
+
+plt.clf()
+
+for i in range(N):
+    plt.plot(agent_solutions_fairness[i])
+
+plt.title('Agent Solutions - Fairness Term')
+plt.savefig('AgentSolutionsFairness_N{}_alpha{}_beta{}_kappa{}_epsbounds{}.png'.format(N, alpha, beta, kappa, eps_bounds))
 
 
 print('init u')
@@ -182,7 +196,7 @@ u_mean = np.mean(u_reshape, axis=0)
 diffs = 0
 logsum = 0
 for i in range(N):
-    diffs += (u_reshape[i] - u_mean)**2
+    diffs += (np.linalg.norm(u_reshape[i]) - u_mean)**2
     logsum += np.exp(-gamma * ((np.linalg.norm(u_reshape[i] - c) ** 2) - r*r))
 fairness_obj = 1/(N-1) * np.sum(diffs)
 
