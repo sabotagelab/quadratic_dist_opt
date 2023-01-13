@@ -1,0 +1,222 @@
+import cvxpy as cp
+import numpy as np
+from scipy.optimize import basinhopping
+
+
+EPS = 1e-8
+
+class Objective():
+    def __init__(self, N, H, system_model, init_states, obstacles, \
+        Q, alpha, beta, gamma, kappa, eps_bounds, Ubox):
+        self.N = N
+        self.H = H
+        self.system_model = system_model
+        self.init_states = init_states
+        self.obstacles = obstacles  # only a single obstacle
+        self.Q = Q
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+        self.kappa = kappa
+        self.eps_bounds = eps_bounds
+        self.Ubox = Ubox
+
+    def solve_distributed(self, init_u, steps=10):
+        control_input_size = self.system_model.control_input_size
+        
+        init_eps = []
+        for i in range(self.N):
+            init_eps.append(np.zeros(self.H * control_input_size))
+        prev_eps = init_eps
+
+        u = init_u
+        for s in range(steps):
+            new_eps = self.solve_local(u.flatten(), prev_eps)
+            
+            for i in range(self.N):
+                u[i] += new_eps[i].reshape((self.H, control_input_size))
+
+            prev_eps = new_eps
+
+        return u
+
+
+    def solve_local(self, u, prev_eps):
+        control_input_size = self.system_model.control_input_size
+        F = self.N * self.H * control_input_size
+        
+        u_param = cp.Parameter(F, value=u)
+
+        # Get the partial derivatives
+        grad_quad = self.quad(u, grad=True).reshape(self.N, control_input_size * self.H)
+        grad_fairness = self.fairness(u, grad=True)
+        grad_obstacle = self.obstacle(u, grad=True)
+
+        solved_values = []
+        for i in range(self.N):
+            grad = grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i]
+            grad_param = cp.Parameter(self.H * control_input_size, value=grad)
+            prev_eps_param = cp.Parameter(self.H * control_input_size, value=prev_eps[i])
+
+            # create decision variable
+            eps = cp.Variable(self.H * control_input_size)
+            if i == 0:
+                eps_zeros_after = cp.Parameter(F - (self.H * control_input_size), \
+                    value=np.zeros(F - (self.H * control_input_size)))
+                stack = cp.hstack([eps, eps_zeros_after])
+            elif i < self.N - 1:
+                eps_zeros_before = cp.Parameter(self.H * control_input_size*i, \
+                    value=np.zeros(self.H * control_input_size * i))
+                eps_zeros_after = cp.Parameter(self.H * control_input_size * (self.N-1-i), \
+                    value=np.zeros(self.H * control_input_size * (self.N-1-i)))
+                stack = cp.hstack([eps_zeros_before, eps, eps_zeros_after])
+            else:
+                eps_zeros_before = cp.Parameter(F - (self.H * control_input_size), \
+                    value=np.zeros(F - (self.H * control_input_size)))
+                stack = cp.hstack([eps_zeros_before, eps])
+
+            # define local objective
+            # objective = cp.Minimize(-1 * (stack.T @ grad_param) + \
+            #     self.kappa * cp.norm(eps - prev_eps_param)**2)
+            objective = cp.Minimize(-1 * (eps.T @ grad_param) + \
+                self.kappa * cp.norm(eps - prev_eps_param)**2)
+
+            # define local constraints
+            constraints = [
+                u_param + stack <= self.Ubox, \
+                -self.Ubox <= u_param + stack,
+                eps <= self.eps_bounds,
+                -1 * self.eps_bounds <= eps
+                ]
+
+            prob = cp.Problem(objective, constraints)
+            prob.solve(verbose=False)
+            solved_values.append(eps.value)
+
+        return solved_values
+
+
+    def solve_central(self, init_u, steps=100):
+        func = self.central_obj
+        x0 = init_u.flatten()
+        # stepsize = 0.01  # TODO: add appropriate step size based on eps_bounds
+        bounds = self.Ubox  # TODO: add bounds, https://het.as.utexas.edu/HET/Software/Scipy/generated/scipy.optimize.basinhopping.html
+        # res = basinhopping(func, x0, stepsize=stepsize, niter=steps)
+        res = basinhopping(func, x0, niter=steps)
+        final_u = res.x
+        final_obj = res.fun
+
+        return final_obj, final_u
+    
+    def central_obj(self, u):
+        return self.quad(u) + \
+            self.alpha * self.fairness(u) - \
+                 self.beta * self.obstacle(u)
+
+    def quad(self, u, grad=False):
+        if grad:
+            return 2 * np.dot(self.Q, u)
+        else:
+            return np.dot(u, np.dot(self.Q, u))
+
+    def fairness(self, u, grad=False):
+        if grad:
+            f = self._fairness_local(u)
+            return f
+        else:
+            return self._fairness_central(u)
+    
+    def _fairness_central(self, u):
+        control_input_size = self.system_model.control_input_size
+        u_reshape = u.reshape((self.N, control_input_size * self.H))
+        mean_energy = np.mean(np.linalg.norm(u_reshape, axis=0))
+
+        diffs = 0
+        for i in range(self.N):
+            diffs += (np.linalg.norm(u_reshape[i]) - mean_energy) ** 2
+    
+        fairness = 1/(self.N) * np.sum(diffs)
+        return fairness
+
+    def _fairness_local(self, u):
+        control_input_size = self.system_model.control_input_size
+        u_reshape = u.reshape((self.N, control_input_size * self.H))
+        mean_energy = np.mean(np.linalg.norm(u_reshape, axis=0))
+
+        partials = []
+        for i in range(self.N):
+            # grad = 2 * (1/self.N) * (u_reshape[i] - mean_energy)
+            grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i]) - mean_energy)
+            partials.append(grad)
+        
+        return partials
+
+    def obstacle(self, u, grad=False):
+        if grad:
+            return self._obstacle_local(u)
+        else:
+            return self._obstacle_central(u)
+
+    def _obstacle_central(self, u):
+        control_input_size = self.system_model.control_input_size
+        u_reshape = u.reshape((self.N, self.H, control_input_size))
+        c = self.obstacles['center']
+        r = self.obstacles['radius']
+        
+        logsum = 0
+        for i in range(self.N):
+            self.system_model.state = self.init_states[i]
+            positions = []
+            for t in range(self.H):
+                _, pos = self.system_model.forward(u_reshape[i, t])
+                positions.append(pos)
+            
+            positions = np.array(positions)
+            # print(positions)
+            # print(c)
+            # print(positions - c)
+            distances_to_obstacle = np.linalg.norm(positions - c)
+            # print(distances_to_obstacle)
+            logsum += np.exp(-self.gamma * (
+                distances_to_obstacle ** 2 - r**2
+                ))
+        
+        return - self.gamma * np.log(logsum + EPS)  # small EPS in case all distances to obstacle is very far, causing logsum to go to 0
+
+    def _obstacle_local(self, u):
+        control_input_size = self.system_model.control_input_size
+        u_reshape = u.reshape((self.N, self.H, control_input_size))
+        c = self.obstacles['center']
+        r = self.obstacles['radius']
+        
+        x = []
+        logsum = 0
+        for i in range(self.N):
+            self.system_model.state = self.init_states[i]
+            positions = []
+            for t in range(self.H):
+                _, pos = self.system_model.forward(u_reshape[i, t].reshape((2, 1)))
+                positions.append(pos)
+            
+            positions = np.array(positions)
+            distances_to_obstacle = np.linalg.norm(positions - c)
+            logsum += np.exp(-self.gamma * (
+                distances_to_obstacle ** 2 - r**2
+                ))
+            
+            x.append(positions)
+
+        x = np.array(x)
+
+        partials = []
+        for i in range(self.N):
+            positions = x[i]
+            distances_to_obstacle = np.linalg.norm(positions - c)
+            partial_smoothmin = np.exp(-self.gamma * distances_to_obstacle ** 2 - r**2) / logsum
+            system_partial = np.gradient(positions, axis=0)  # May have to take system derivative manually
+            p = partial_smoothmin * 2 * distances_to_obstacle * system_partial
+            partials.append(p.flatten())
+
+        return partials
+
+
