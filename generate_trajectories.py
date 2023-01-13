@@ -38,7 +38,7 @@ def generate_agent_states(control_inputs, model='constant_accel'):
         states = []
         system = SystemSimple(init_state)
         for a in control_inputs:
-            state, position = system.forward(a)
+            state, position = system.forward(a.reshape((2, 1)))
             states.append(state)
     
         return np.array(states).reshape((len(states), state_size))

@@ -20,25 +20,29 @@ class Objective():
         self.kappa = kappa
         self.eps_bounds = eps_bounds
         self.Ubox = Ubox
+        self.UBoxBounds = UBoxBounds(Ubox)
+        self.TakeStep = TakeStep(eps_bounds)
 
     def solve_distributed(self, init_u, steps=10):
         control_input_size = self.system_model.control_input_size
         
         init_eps = []
+        local_sols = {}
         for i in range(self.N):
             init_eps.append(np.zeros(self.H * control_input_size))
+            local_sols[i] = []
         prev_eps = init_eps
 
         u = init_u
         for s in range(steps):
-            new_eps = self.solve_local(u.flatten(), prev_eps)
-            
+            new_eps, sols = self.solve_local(u.flatten(), prev_eps)
             for i in range(self.N):
                 u[i] += new_eps[i].reshape((self.H, control_input_size))
+                local_sols[i].append(sols[i])
 
             prev_eps = new_eps
 
-        return u
+        return u, local_sols
 
 
     def solve_local(self, u, prev_eps):
@@ -53,6 +57,7 @@ class Objective():
         grad_obstacle = self.obstacle(u, grad=True)
 
         solved_values = []
+        local_sols = []
         for i in range(self.N):
             grad = grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i]
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
@@ -92,17 +97,16 @@ class Objective():
             prob = cp.Problem(objective, constraints)
             prob.solve(verbose=False)
             solved_values.append(eps.value)
+            local_sols.append(prob.value)
 
-        return solved_values
+        return solved_values, local_sols
 
-
-    def solve_central(self, init_u, steps=100):
+    # TODO: add option to use custom-built simulated annealing
+    def solve_central(self, init_u, steps=200):
         func = self.central_obj
         x0 = init_u.flatten()
-        # stepsize = 0.01  # TODO: add appropriate step size based on eps_bounds
-        bounds = self.Ubox  # TODO: add bounds, https://het.as.utexas.edu/HET/Software/Scipy/generated/scipy.optimize.basinhopping.html
-        # res = basinhopping(func, x0, stepsize=stepsize, niter=steps)
-        res = basinhopping(func, x0, niter=steps)
+        # res = basinhopping(func, x0, niter=steps, take_step=self.TakeStep, accept_test=self.UBoxBounds, callback=print_fun)
+        res = basinhopping(func, x0, niter=steps, accept_test=self.UBoxBounds, callback=print_fun)
         final_u = res.x
         final_obj = res.fun
 
@@ -177,11 +181,11 @@ class Objective():
             # print(positions - c)
             distances_to_obstacle = np.linalg.norm(positions - c)
             # print(distances_to_obstacle)
-            logsum += np.exp(-self.gamma * (
+            logsum += np.exp(-1 * self.gamma * (
                 distances_to_obstacle ** 2 - r**2
                 ))
         
-        return - self.gamma * np.log(logsum + EPS)  # small EPS in case all distances to obstacle is very far, causing logsum to go to 0
+        return -1 * self.gamma * np.log(logsum + EPS)  # small EPS in case all distances to obstacle is very far, causing logsum to go to 0
 
     def _obstacle_local(self, u):
         control_input_size = self.system_model.control_input_size
@@ -200,7 +204,7 @@ class Objective():
             
             positions = np.array(positions)
             distances_to_obstacle = np.linalg.norm(positions - c)
-            logsum += np.exp(-self.gamma * (
+            logsum += np.exp(-1 * self.gamma * (
                 distances_to_obstacle ** 2 - r**2
                 ))
             
@@ -212,7 +216,7 @@ class Objective():
         for i in range(self.N):
             positions = x[i]
             distances_to_obstacle = np.linalg.norm(positions - c)
-            partial_smoothmin = np.exp(-self.gamma * distances_to_obstacle ** 2 - r**2) / logsum
+            partial_smoothmin = np.exp(-1 * self.gamma * distances_to_obstacle ** 2 - r**2) / logsum
             system_partial = np.gradient(positions, axis=0)  # May have to take system derivative manually
             p = partial_smoothmin * 2 * distances_to_obstacle * system_partial
             partials.append(p.flatten())
@@ -220,3 +224,32 @@ class Objective():
         return partials
 
 
+class UBoxBounds():
+    # Bounds for basinhopping, https://het.as.utexas.edu/HET/Software/Scipy/generated/scipy.optimize.basinhopping.html
+    def __init__(self, Ubox):
+        self.umax = Ubox
+        self.umin = -1 * Ubox
+    
+    def __call__(self, **kwargs):
+        x = kwargs['x_new']
+        tmax = bool(np.all(x <= self.umax))
+        tmin = bool(np.all(x >= self.umin))
+        teps = bool(np.all(np.abs(x) >= 0.1))
+        print(tmax and tmin and teps)
+        return tmax and tmin and teps
+
+
+class TakeStep():
+    def __init__(self, stepsize):
+        self.stepsize = stepsize
+    
+    def __call__(self, x):
+        s = self.stepsize
+        random_change = np.random.uniform(low=s, high=1, size=x.shape)
+        sign = np.random.choice([-1, 1])
+        new_x = x + sign * random_change 
+        # print(new_x)
+        return new_x
+
+def print_fun(x, f, accepted):
+    print("at minima %.4f accepted %d" % (f, int(accepted)))
