@@ -4,79 +4,69 @@ import numpy as np
 # TODO: REFACTOR TO CLASS
 # TODO: use model from unmesh email
 
-def generate_agent_control_inputs(num_timesteps, model='constant_accel'):
-    # should return an array of shape (N, H, m), for m-sized control input, H = num_timesteps, and N = num_agents
-    if model == 'constant_accel':
-        control_inputs = []
-        for i in range(num_timesteps):
-            control_inputs.append(np.random.uniform(low=-1, high=1))
+# def generate_agent_control_inputs(num_timesteps, model='constant_accel'):
+#     # should return an array of shape (N, H, m), for m-sized control input, H = num_timesteps, and N = num_agents
+#     if model == 'constant_accel':
+#         control_inputs = []
+#         for i in range(num_timesteps):
+#             control_inputs.append(np.random.uniform(low=-1, high=1))
     
-        return np.array(control_inputs)
+#         return np.array(control_inputs)
     
-    elif model == 'simple':
-        control_inputs = []
-        for i in range(num_timesteps):
-            control_inputs.append(np.random.uniform(low=-1, high=1, size=2))
+#     elif model == 'simple':
+#         control_inputs = []
+#         for i in range(num_timesteps):
+#             control_inputs.append(np.random.uniform(low=-1, high=1, size=2))
     
-        return np.array(control_inputs)
+#         return np.array(control_inputs)
 
-def generate_agent_states(control_inputs, model='constant_accel'):
+def generate_agent_states(control_inputs, init_state, model):
     # should return an array of shape (N, H, m), for m state size, H = num_timesteps, and N = num_agents
-    if model == 'constant_accel':
-        state_size = 2
-        init_state = np.array([[0], [0]])
-        states = []
-        system = SystemConstantAccel(init_state)
-        for a in control_inputs:
-            states.append(system.forward(a))
+
+    states = [init_state]
+    system = model(init_state)
+    state_size = system.state_size
+    control_input_size = system.control_input_size
+    for a in control_inputs:
+        state, position = system.forward(a.reshape((control_input_size, 1)))
+        states.append(state)
+
+    return np.array(states).reshape((len(states), state_size))
+
+# def create_u_vector(control_inputs, model='constant_accel'):
+#     # create a 1D vector of size m * H * N, for m-sized control input, H = num_timesteps, and N = num_agents
+#     if model == 'constant_accel':
+#         N, H = control_inputs.shape
+#         control_inputs = control_inputs.reshape((1, H, N))
+
+#     elif model == 'simple':
+#         N, H = control_inputs.shape
+#         control_inputs = control_inputs.reshape((2, H, N))
     
-        return np.array(states).reshape((len(states), state_size))
+#     m, H, N = control_inputs.shape
+#     return control_inputs.reshape(m*H*N)
 
-    elif model == 'simple':
-        state_size = 2
-        init_state = np.array([[0], [0]])
-        states = []
-        system = SystemSimple(init_state)
-        for a in control_inputs:
-            state, position = system.forward(a.reshape((2, 1)))
-            states.append(state)
-    
-        return np.array(states).reshape((len(states), state_size))
+# def create_x_vector(states):
+#     # create a 1D vector of size m * H * N, for m state size, H = num_timesteps, and N = num_agents
+#     N, H, m = states.shape
+#     states = states.reshape((m, H, N))
+#     return states.reshape(m*H*N)
 
-def create_u_vector(control_inputs, model='constant_accel'):
-    # create a 1D vector of size m * H * N, for m-sized control input, H = num_timesteps, and N = num_agents
-    if model == 'constant_accel':
-        N, H = control_inputs.shape
-        control_inputs = control_inputs.reshape((1, H, N))
+# def generate_trajectories(num_agents, num_timesteps, model):
+#     control_inputs = []
+#     for n in range(num_agents):
+#         control_inputs.append(generate_agent_control_inputs(num_timesteps, model=model))
 
-    elif model == 'simple':
-        N, H = control_inputs.shape
-        control_inputs = control_inputs.reshape((2, H, N))
-    
-    m, H, N = control_inputs.shape
-    return control_inputs.reshape(m*H*N)
+#     states = []
+#     for input_set in control_inputs:
+#         states.append(generate_agent_states(input_set, model=model))
 
-def create_x_vector(states):
-    # create a 1D vector of size m * H * N, for m state size, H = num_timesteps, and N = num_agents
-    N, H, m = states.shape
-    states = states.reshape((m, H, N))
-    return states.reshape(m*H*N)
+#     init_u = create_u_vector(np.array(control_inputs), model=model)
+#     init_x = create_x_vector(np.array(states))
+#     # init_u = control_inputs
+#     # init_x = states
 
-def generate_trajectories(num_agents, num_timesteps, model='constant_accel'):
-    control_inputs = []
-    for n in range(num_agents):
-        control_inputs.append(generate_agent_control_inputs(num_timesteps, model=model))
-
-    states = []
-    for input_set in control_inputs:
-        states.append(generate_agent_states(input_set, model=model))
-
-    init_u = create_u_vector(np.array(control_inputs), model=model)
-    init_x = create_x_vector(np.array(states))
-    # init_u = control_inputs
-    # init_x = states
-
-    return init_u, init_x
+#     return init_u, init_x
 
 
 ##############################################################################
@@ -89,6 +79,7 @@ class SystemConstantAccel():
         init_state: 2d array [altitude, velocity]
         """
         self.control_input_size = 1
+        self.state_size = 2
         self.state = init_state
         self.dt = dt
 
@@ -112,6 +103,7 @@ class SystemSimple():
         init_state: 2d array
         """
         self.control_input_size = 2
+        self.state_size = 2
         self.state = init_state
         self.dt = dt
 

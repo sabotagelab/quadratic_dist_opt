@@ -1,18 +1,20 @@
 import cvxpy as cp
 import numpy as np
 from scipy.optimize import basinhopping
-
+from generate_trajectories import generate_agent_states
 
 EPS = 1e-8
 
 class Objective():
-    def __init__(self, N, H, system_model, init_states, obstacles, \
+    def __init__(self, N, H, system_model_config, init_states, obstacles, target,\
         Q, alpha, beta, gamma, kappa, eps_bounds, Ubox):
         self.N = N
         self.H = H
-        self.system_model = system_model
+        self.system_model = system_model_config[0]
+        self.control_input_size = system_model_config[1]
         self.init_states = init_states
         self.obstacles = obstacles  # only a single obstacle
+        self.target = target  # only a single target
         self.Q = Q
         self.alpha = alpha
         self.beta = beta
@@ -24,7 +26,7 @@ class Objective():
         self.TakeStep = TakeStep(eps_bounds)
 
     def solve_distributed(self, init_u, steps=10):
-        control_input_size = self.system_model.control_input_size
+        control_input_size = self.control_input_size
         
         init_eps = []
         local_sols = {}
@@ -34,19 +36,22 @@ class Objective():
         prev_eps = init_eps
 
         u = init_u
+        fairness = []
         for s in range(steps):
             new_eps, sols = self.solve_local(u.flatten(), prev_eps)
             for i in range(self.N):
                 u[i] += new_eps[i].reshape((self.H, control_input_size))
                 local_sols[i].append(sols[i])
 
+            fairness.append(self._fairness_central(u))
             prev_eps = new_eps
 
-        return u, local_sols
+        return u, local_sols, fairness
 
 
     def solve_local(self, u, prev_eps):
-        control_input_size = self.system_model.control_input_size
+        control_input_size = self.control_input_size
+        state_size = self.init_states[0].shape
         F = self.N * self.H * control_input_size
         
         u_param = cp.Parameter(F, value=u)
@@ -59,6 +64,7 @@ class Objective():
         solved_values = []
         local_sols = []
         for i in range(self.N):
+            init_state_param = cp.Parameter(state_size, value = self.init_states[i])
             grad = grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i]
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
             prev_eps_param = cp.Parameter(self.H * control_input_size, value=prev_eps[i])
@@ -94,6 +100,10 @@ class Objective():
                 -1 * self.eps_bounds <= eps
                 ]
 
+            # TODO: define constraints on position based on eps and init state param
+            # for j in range(self.H):
+
+
             prob = cp.Problem(objective, constraints)
             prob.solve(verbose=False)
             solved_values.append(eps.value)
@@ -103,10 +113,16 @@ class Objective():
 
     # TODO: add option to use custom-built simulated annealing
     def solve_central(self, init_u, steps=200):
+        init_trajectories = []
+        for i in range(self.N):
+            traj = generate_agent_states(init_u[i], self.init_states[i], model=self.system_model)
+            init_trajectories.append(traj)
+
         func = self.central_obj
         x0 = init_u.flatten()
         # res = basinhopping(func, x0, niter=steps, take_step=self.TakeStep, accept_test=self.UBoxBounds, callback=print_fun)
-        res = basinhopping(func, x0, niter=steps, accept_test=self.UBoxBounds, callback=print_fun)
+        # res = basinhopping(func, x0, niter=steps, accept_test=self.UBoxBounds, callback=print_fun)
+        res = basinhopping(func, x0, niter=steps, take_step=self.TakeStep, accept_test=self.UBoxBounds)
         final_u = res.x
         final_obj = res.fun
 
@@ -131,10 +147,16 @@ class Objective():
             return self._fairness_central(u)
     
     def _fairness_central(self, u):
-        control_input_size = self.system_model.control_input_size
+        control_input_size = self.control_input_size
+        u_reshape = u.reshape((self.N, self.H, control_input_size))
+        
+        init_trajectories = []
+        for i in range(self.N):
+            traj = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
+            init_trajectories.append(traj)
+
         u_reshape = u.reshape((self.N, control_input_size * self.H))
         mean_energy = np.mean(np.linalg.norm(u_reshape, axis=0))
-
         diffs = 0
         for i in range(self.N):
             diffs += (np.linalg.norm(u_reshape[i]) - mean_energy) ** 2
@@ -143,15 +165,21 @@ class Objective():
         return fairness
 
     def _fairness_local(self, u):
-        control_input_size = self.system_model.control_input_size
+        control_input_size = self.control_input_size
+        u_reshape = u.reshape((self.N, self.H, control_input_size))        
+        init_trajectories = []
+        for i in range(self.N):
+            traj = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
+            init_trajectories.append(traj[1:])
+
         u_reshape = u.reshape((self.N, control_input_size * self.H))
         mean_energy = np.mean(np.linalg.norm(u_reshape, axis=0))
-
         partials = []
         for i in range(self.N):
-            # grad = 2 * (1/self.N) * (u_reshape[i] - mean_energy)
             grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i]) - mean_energy)
-            partials.append(grad)
+            grad_positions = np.gradient(init_trajectories[i], axis=0)  # May have to take system derivative manually
+            partials.append(grad * grad_positions.flatten())
+            
         
         return partials
 
@@ -162,25 +190,16 @@ class Objective():
             return self._obstacle_central(u)
 
     def _obstacle_central(self, u):
-        control_input_size = self.system_model.control_input_size
+        control_input_size = self.control_input_size
         u_reshape = u.reshape((self.N, self.H, control_input_size))
         c = self.obstacles['center']
         r = self.obstacles['radius']
         
         logsum = 0
         for i in range(self.N):
-            self.system_model.state = self.init_states[i]
-            positions = []
-            for t in range(self.H):
-                _, pos = self.system_model.forward(u_reshape[i, t])
-                positions.append(pos)
-            
-            positions = np.array(positions)
-            # print(positions)
-            # print(c)
-            # print(positions - c)
+            positions = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
+            positions = positions[1:]
             distances_to_obstacle = np.linalg.norm(positions - c)
-            # print(distances_to_obstacle)
             logsum += np.exp(-1 * self.gamma * (
                 distances_to_obstacle ** 2 - r**2
                 ))
@@ -188,7 +207,7 @@ class Objective():
         return -1 * self.gamma * np.log(logsum + EPS)  # small EPS in case all distances to obstacle is very far, causing logsum to go to 0
 
     def _obstacle_local(self, u):
-        control_input_size = self.system_model.control_input_size
+        control_input_size = self.control_input_size
         u_reshape = u.reshape((self.N, self.H, control_input_size))
         c = self.obstacles['center']
         r = self.obstacles['radius']
@@ -196,13 +215,8 @@ class Objective():
         x = []
         logsum = 0
         for i in range(self.N):
-            self.system_model.state = self.init_states[i]
-            positions = []
-            for t in range(self.H):
-                _, pos = self.system_model.forward(u_reshape[i, t].reshape((2, 1)))
-                positions.append(pos)
-            
-            positions = np.array(positions)
+            positions = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
+            positions = positions[1:]
             distances_to_obstacle = np.linalg.norm(positions - c)
             logsum += np.exp(-1 * self.gamma * (
                 distances_to_obstacle ** 2 - r**2
@@ -235,7 +249,7 @@ class UBoxBounds():
         tmax = bool(np.all(x <= self.umax))
         tmin = bool(np.all(x >= self.umin))
         teps = bool(np.all(np.abs(x) >= 0.1))
-        print(tmax and tmin and teps)
+        # print(tmax and tmin and teps)
         return tmax and tmin and teps
 
 
