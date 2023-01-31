@@ -12,9 +12,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Centralized Optimization')
     parser.add_argument('--N', type=int, default=3)
     parser.add_argument('--alpha', type=float, default=1)
-    parser.add_argument('--beta', type=float, default=1)
+    parser.add_argument('--beta', type=float, default=10)
     parser.add_argument('--gamma', type=float, default=1)
-    parser.add_argument('--kappa', type=float, default=1)
+    parser.add_argument('--kappa', type=float, default=.1)
     parser.add_argument('--eps_bounds', type=float, default=.1)
     
     parser.add_argument('--r', type=float, default=0.5)
@@ -33,11 +33,13 @@ if __name__ == "__main__":
     eps_bounds = args.eps_bounds  # bounds for eps in an iteration
     r = args.r  # radius of circle
     c = np.array([args.c, args.c])  # center of circle
+    rg = r
+    cg = np.array([5, 5])
     obstacles = {'center': c, 'radius': r}
     target = {'center': np.array([5, 5]), 'radius': r}
     Ubox = args.Ubox  # box constraint
     
-    H = 3
+    H = 5
     # GENERATE INITIAL STATES
     # init_states = []
     # for i in range(N):
@@ -51,7 +53,12 @@ if __name__ == "__main__":
     system_model_config = (SystemSimple, control_input_size)
 
     # GENERATE INITIAL CONTROL INPUTS
-    init_u = np.random.uniform(low=-1, high=1, size=(N, H, control_input_size))
+    # init_u = np.random.uniform(low=-1, high=1, size=(N, H, control_input_size))
+    init_u1 = np.array([[1, 0], [.75, 1], [.75, 0], [.75, 0], [.5, 0]])
+    init_u2 = np.array([[1, 1], [.75, 1], [.75, 1], [.5, 1], [1, 0]])
+    init_u3 = np.array([[1, 0], [0, 1], [0, 1], [0, 1], [0, .8]])
+    init_u = np.array([init_u1, init_u2, init_u3])
+    init_u = init_u.reshape((N, H, control_input_size))
     print('Initial Inputs')
     print(init_u)
 
@@ -63,10 +70,12 @@ if __name__ == "__main__":
         traj = generate_agent_states(init_u[i], init_states[i], model=SystemSimple)
         ax.scatter(traj[:,0], traj[:,1], label=i)
         init_trajectories.append(traj)
-    print("Initial Trajectories")
-    print(init_trajectories)
-    circle = plt.Circle(c, r, fill=False)
-    ax.add_patch(circle)
+    # print("Initial Trajectories")
+    # print(init_trajectories)
+    obs = plt.Circle(c, r, fill=True, alpha=0.2, color='red')
+    ax.add_patch(obs)
+    goal = plt.Circle(cg, rg, fill=True, alpha=0.2, color='green')
+    ax.add_patch(goal)
     plt.xlim([-10, 10])
     plt.ylim([-10, 10])
     plt.legend()
@@ -74,10 +83,10 @@ if __name__ == "__main__":
     plt.clf()
      
     # INIT SOLVER
-    Q = np.eye(N*H*control_input_size)   # variable for quadratic objective
-    # n = N*H*control_input_size
-    # Q = np.random.randn(n, n)   # variable for quadratic objective
-    # Q = Q.T @ Q
+    # Q = np.eye(N*H*control_input_size)   # variable for quadratic objective
+    n = N*H*control_input_size
+    Q = np.random.randn(n, n)   # variable for quadratic objective
+    Q = Q.T @ Q
     obj = Objective(N, H, system_model_config, init_states, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox)
 
     # METRICS FOR INITIAL TRAJECTORY
@@ -90,7 +99,7 @@ if __name__ == "__main__":
     print(obj.obstacle(init_u.flatten()))
 
     # SOLVE USING CENTRAL
-    final_obj, final_u = obj.solve_central(init_u)
+    final_obj, final_u = obj.solve_central(init_u, steps=100)
     print('Central Final Obj {}'.format(final_obj))
     print('Solved Inputs')
     final_u = final_u.reshape(N, H, control_input_size)
@@ -112,8 +121,11 @@ if __name__ == "__main__":
         traj = generate_agent_states(final_u[i], init_states[i], model=SystemSimple)
         ax.scatter(traj[:,0], traj[:,1], label=i)
         final_trajectories.append(traj)
-    circle = plt.Circle(c, r, fill=False)
-    ax.add_patch(circle)
+    # print(final_trajectories)
+    obs = plt.Circle(c, r, fill=True, alpha=0.2, color='red')
+    ax.add_patch(obs)
+    goal = plt.Circle(cg, rg, fill=True, alpha=0.2, color='green')
+    ax.add_patch(goal)
     plt.xlim([-10, 10])
     plt.ylim([-10, 10])
     plt.legend()
@@ -122,7 +134,7 @@ if __name__ == "__main__":
 
 
     # SOLVE USING DISTRIBUTED OPTIMIZATION
-    final_u, local_sols, fairness = obj.solve_distributed(init_u, steps=200)
+    final_u, local_sols, fairness = obj.solve_distributed(init_u, steps=100)
     print('Distributed Final Obj {}'.format(obj.central_obj(final_u.flatten())))
     print(obj.central_obj(final_u.flatten()))
     print('Solved Inputs')
@@ -145,8 +157,10 @@ if __name__ == "__main__":
         ax.scatter(traj[:,0], traj[:,1], label=i)
         final_trajectories.append(traj)
     # print(final_trajectories)
-    circle = plt.Circle(c, r, fill=False)
-    ax.add_patch(circle)
+    obs = plt.Circle(c, r, fill=True, alpha=0.2, color='red')
+    ax.add_patch(obs)
+    goal = plt.Circle(cg, rg, fill=True, alpha=0.2, color='green')
+    ax.add_patch(goal)
     plt.xlim([-10, 10])
     plt.ylim([-10, 10])
     plt.legend()

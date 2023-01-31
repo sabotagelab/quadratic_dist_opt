@@ -1,6 +1,6 @@
 import cvxpy as cp
 import numpy as np
-from scipy.optimize import basinhopping
+from scipy.optimize import Bounds, basinhopping, minimize, NonlinearConstraint
 from generate_trajectories import generate_agent_states
 
 EPS = 1e-8
@@ -22,8 +22,9 @@ class Objective():
         self.kappa = kappa
         self.eps_bounds = eps_bounds
         self.Ubox = Ubox
-        self.UBoxBounds = UBoxBounds(Ubox)
+        self.ReachAvoid = ReachAvoid(Ubox, target, init_states, H, self.control_input_size)
         self.TakeStep = TakeStep(eps_bounds)
+        self.safe_dist = 0.1
 
     def solve_distributed(self, init_u, steps=10):
         control_input_size = self.control_input_size
@@ -38,6 +39,7 @@ class Objective():
         u = init_u
         fairness = []
         for s in range(steps):
+            # print('Iter {}'.format(s))
             new_eps, sols = self.solve_local(u.flatten(), prev_eps)
             for i in range(self.N):
                 u[i] += new_eps[i].reshape((self.H, control_input_size))
@@ -60,12 +62,12 @@ class Objective():
         grad_quad = self.quad(u, grad=True).reshape(self.N, control_input_size * self.H)
         grad_fairness = self.fairness(u, grad=True)
         grad_obstacle = self.obstacle(u, grad=True)
+        grad_avoid = self.avoid_constraint(u, grad=True)
 
         solved_values = []
         local_sols = []
         for i in range(self.N):
-            init_state_param = cp.Parameter(state_size, value = self.init_states[i])
-            grad = grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i]
+            grad = grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - grad_avoid[i]
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
             prev_eps_param = cp.Parameter(self.H * control_input_size, value=prev_eps[i])
 
@@ -86,52 +88,106 @@ class Objective():
                     value=np.zeros(F - (self.H * control_input_size)))
                 stack = cp.hstack([eps_zeros_before, eps])
 
+            # define constraint on final position based on eps and init state param
+            target_center = self.target['center']
+            target_radius = self.target['radius']
+            prev_state = self.init_states[i]
+            for j in range(self.H):
+                idx = j*control_input_size
+                # TODO: assuming simple dynamics for now
+                new_state = prev_state.flatten() + 2*eps[idx:idx+control_input_size]
+                prev_state = new_state
+
             # define local objective
             # objective = cp.Minimize(-1 * (stack.T @ grad_param) + \
             #     self.kappa * cp.norm(eps - prev_eps_param)**2)
             objective = cp.Minimize(-1 * (eps.T @ grad_param) + \
-                self.kappa * cp.norm(eps - prev_eps_param)**2)
+                self.kappa * cp.norm(eps - prev_eps_param)**2 + \
+                    (cp.norm(prev_state - target_center)**2 - target_radius**2))
 
             # define local constraints
             constraints = [
                 u_param + stack <= self.Ubox, \
                 -self.Ubox <= u_param + stack,
                 eps <= self.eps_bounds,
-                -1 * self.eps_bounds <= eps
+                -1 * self.eps_bounds <= eps #,
+                # cp.norm(prev_state - target_center) <= target_radius
                 ]
 
-            # TODO: define constraints on position based on eps and init state param
-            # for j in range(self.H):
-
-
             prob = cp.Problem(objective, constraints)
+            # print('Agent {}'.format(i))
             prob.solve(verbose=False)
             solved_values.append(eps.value)
             local_sols.append(prob.value)
 
         return solved_values, local_sols
 
-    # TODO: add option to use custom-built simulated annealing
     def solve_central(self, init_u, steps=200):
-        init_trajectories = []
-        for i in range(self.N):
-            traj = generate_agent_states(init_u[i], self.init_states[i], model=self.system_model)
-            init_trajectories.append(traj)
-
         func = self.central_obj
         x0 = init_u.flatten()
-        # res = basinhopping(func, x0, niter=steps, take_step=self.TakeStep, accept_test=self.UBoxBounds, callback=print_fun)
-        # res = basinhopping(func, x0, niter=steps, accept_test=self.UBoxBounds, callback=print_fun)
-        res = basinhopping(func, x0, niter=steps, take_step=self.TakeStep, accept_test=self.UBoxBounds)
+        
+        # res = basinhopping(func, x0, niter=steps, accept_test=self.ReachAvoid, callback=print_fun)
+        # res = basinhopping(func, x0, niter=steps, take_step=self.TakeStep, accept_test=self.ReachAvoid, callback=print_fun)
+        # res = basinhopping(func, x0, niter=steps, accept_test=self.ReachAvoid)
+        res = minimize(func, x0, bounds=Bounds(lb=-self.Ubox, ub=self.Ubox), constraints=NonlinearConstraint(self.reach_constraint, -np.inf, 0))
         final_u = res.x
         final_obj = res.fun
 
         return final_obj, final_u
+
+    def reach_constraint(self, u):
+        # u = u.flatten()
+        control_input_size = self.control_input_size
+        u_reshape = u.reshape((self.N, self.H, control_input_size))
+        target_center = self.target['center']
+        target_radius = self.target['radius']
+        num_agents = len(self.init_states)
+        reach = 0
+        # TODO: why not use generate_agent_states function? 
+        for i in range(num_agents):
+            pos_i = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
+            final_pos = pos_i[self.H]
+            # prev_state = self.init_states[i]
+            # idx_start = i * self.H * control_input_size
+            # for j in range(self.H):
+            #     idx = idx_start+j*control_input_size
+            #     # TODO: assuming simple dynamics for now
+            #     new_state = prev_state.flatten() + 2*u[idx:idx+control_input_size]
+            #     prev_state = new_state
+            # reach += np.linalg.norm(prev_state - target_center)**2 - target_radius**2
+            reach += np.linalg.norm(final_pos - target_center)**2 - target_radius**2
+        return reach
+
     
     def central_obj(self, u):
         return self.quad(u) + \
             self.alpha * self.fairness(u) - \
-                 self.beta * self.obstacle(u)
+                 self.beta * self.obstacle(u) + \
+                    self.avoid_constraint(u)
+
+    def avoid_constraint(self, u, grad=False):
+        control_input_size = self.control_input_size
+        u_reshape = u.reshape((self.N, self.H, control_input_size))
+        num_agents = len(self.init_states)
+        if grad:
+            partials = []
+            for i in range(num_agents):
+                pos_i = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
+                avoid = 0
+                for j in range(i, num_agents):
+                    pos_j = generate_agent_states(u_reshape[j], self.init_states[j], model=self.system_model)
+                    avoid += (pos_i[1:] - pos_j[1:]) / (np.abs(pos_i[1:] - pos_j[1:]) + EPS)
+                partials.append(avoid.flatten())
+            
+            return partials
+        else:
+            avoid = 0
+            for i in range(num_agents):
+                pos_i = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
+                for j in range(i, num_agents):
+                    pos_j = generate_agent_states(u_reshape[j], self.init_states[j], model=self.system_model)
+                    avoid += np.linalg.norm(pos_i - pos_j) - self.safe_dist
+            return -1 * avoid
 
     def quad(self, u, grad=False):
         if grad:
@@ -180,7 +236,6 @@ class Objective():
             grad_positions = np.gradient(init_trajectories[i], axis=0)  # May have to take system derivative manually
             partials.append(grad * grad_positions.flatten())
             
-        
         return partials
 
     def obstacle(self, u, grad=False):
@@ -238,19 +293,43 @@ class Objective():
         return partials
 
 
-class UBoxBounds():
+class ReachAvoid():
     # Bounds for basinhopping, https://het.as.utexas.edu/HET/Software/Scipy/generated/scipy.optimize.basinhopping.html
-    def __init__(self, Ubox):
+    def __init__(self, Ubox, target, init_states, H, control_input_size):
         self.umax = Ubox
         self.umin = -1 * Ubox
+        self.target_center = target['center']
+        self.target_radius = target['radius']
+        self.init_states = init_states
+        self.H = H
+        self.control_input_size = control_input_size
     
     def __call__(self, **kwargs):
         x = kwargs['x_new']
         tmax = bool(np.all(x <= self.umax))
         tmin = bool(np.all(x >= self.umin))
-        teps = bool(np.all(np.abs(x) >= 0.1))
-        # print(tmax and tmin and teps)
-        return tmax and tmin and teps
+        # teps = bool(np.all(np.abs(x) >= 0.1))
+        
+        # define constraint on final position based on eps and init state param
+        control_input_size = self.control_input_size
+        target_center = self.target_center
+        target_radius = self.target_radius
+        num_agents = len(self.init_states)
+        for i in range(num_agents):
+            prev_state = self.init_states[i]
+            for j in range(self.H):
+                idx = j*control_input_size
+                # TODO: assuming simple dynamics for now
+                new_state = prev_state.flatten() + 2*x[idx:idx+control_input_size]
+                # print(new_state)
+                prev_state = new_state
+        reach = bool(np.linalg.norm(prev_state - target_center) <= target_radius)
+
+        # print(tmax and tmin, tmax and tmin and reach)
+        if reach:
+            return "force accept"
+        else:
+            return tmax and tmin and reach
 
 
 class TakeStep():
@@ -259,9 +338,10 @@ class TakeStep():
     
     def __call__(self, x):
         s = self.stepsize
-        random_change = np.random.uniform(low=s, high=1, size=x.shape)
-        sign = np.random.choice([-1, 1])
-        new_x = x + sign * random_change 
+        random_change = np.random.uniform(low=-1, high=1, size=x.shape)
+        # sign = np.random.choice([-1, 1])
+        # new_x = x + sign * random_change 
+        new_x = x + random_change 
         # print(new_x)
         return new_x
 
