@@ -67,6 +67,7 @@ class Objective():
         solved_values = []
         local_sols = []
         for i in range(self.N):
+            curr_agent_u = u.reshape((self.N, self.H, control_input_size))[i].flatten()
             grad = grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - grad_avoid[i]
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
             prev_eps_param = cp.Parameter(self.H * control_input_size, value=prev_eps[i])
@@ -95,23 +96,25 @@ class Objective():
             for j in range(self.H):
                 idx = j*control_input_size
                 # TODO: assuming simple dynamics for now
-                new_state = prev_state.flatten() + 2*eps[idx:idx+control_input_size]
+                new_state = prev_state.flatten() + \
+                    2*(curr_agent_u[idx:idx+control_input_size] + \
+                         eps[idx:idx+control_input_size])
                 prev_state = new_state
 
             # define local objective
             # objective = cp.Minimize(-1 * (stack.T @ grad_param) + \
             #     self.kappa * cp.norm(eps - prev_eps_param)**2)
             objective = cp.Minimize(-1 * (eps.T @ grad_param) + \
-                self.kappa * cp.norm(eps - prev_eps_param)**2 + \
-                    (cp.norm(prev_state - target_center)**2 - target_radius**2))
+                self.kappa * cp.norm(eps - prev_eps_param)**2 )#+ \
+                    # (cp.norm(prev_state - target_center)**2 - target_radius**2))
 
             # define local constraints
             constraints = [
                 u_param + stack <= self.Ubox, \
                 -self.Ubox <= u_param + stack,
                 eps <= self.eps_bounds,
-                -1 * self.eps_bounds <= eps #,
-                # cp.norm(prev_state - target_center) <= target_radius
+                -1 * self.eps_bounds <= eps ,
+                cp.norm(prev_state - target_center) <= target_radius
                 ]
 
             prob = cp.Problem(objective, constraints)
