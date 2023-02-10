@@ -114,8 +114,8 @@ class Objective():
                 
                     accel = curr_agent_u[idx:idx+control_input_size] + eps[idx:idx+control_input_size]
 
-                    velo = velo + accel*t
                     pos = pos + velo*t + (1.0/2.0)*accel*(t**2)
+                    velo = velo + accel*t
 
                 final_pos = pos
             else:
@@ -146,7 +146,7 @@ class Objective():
 
             prob = cp.Problem(objective, constraints)
             prob.solve(verbose=False)
-            print('Agent {} Problem Status {}'.format(i, prob.status))
+            # print('Agent {} Problem Status {}'.format(i, prob.status))
             solved_values.append(eps.value)
             local_sols.append(prob.value)
 

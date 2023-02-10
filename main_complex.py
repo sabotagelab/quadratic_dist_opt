@@ -8,6 +8,8 @@ from generate_trajectories import Quadrocopter
 from generate_trajectories import generate_agent_states, generate_init_traj_quad
 
 
+EPS = 1e-2
+
 if __name__ == "__main__":
     np.random.seed(42)
 
@@ -18,7 +20,7 @@ if __name__ == "__main__":
     parser.add_argument('--beta', type=float, default=10)
     parser.add_argument('--gamma', type=float, default=1)
     parser.add_argument('--kappa', type=float, default=.1)
-    parser.add_argument('--eps_bounds', type=float, default=1)
+    parser.add_argument('--eps_bounds', type=float, default=10)
     
     parser.add_argument('--ro', type=float, default=0.5)
     parser.add_argument('--co', type=float, default=3)
@@ -111,7 +113,8 @@ if __name__ == "__main__":
     n = N*H*control_input_size
     Q = np.random.randn(n, n)   # variable for quadratic objective
     Q = Q.T @ Q
-    obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=Tf/H*1.5)
+    # obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=Tf/H*1.5)
+    obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=Tf/H+EPS)
 
     # METRICS FOR INITIAL TRAJECTORY
     print('Initial Obj {}'.format(obj.central_obj(init_u.flatten())))
@@ -125,9 +128,9 @@ if __name__ == "__main__":
     # SOLVE USING CENTRAL
     final_obj, final_u = obj.solve_central(init_u, steps=10)
     print('Central Final Obj {}'.format(final_obj))
-    print('Solved Inputs')
+    # print('Solved Inputs')
     final_u = final_u.reshape(N, H, control_input_size)
-    print(final_u)
+    # print(final_u)
 
     # METRICS FOR FINAL TRAJECTORY AFTER SOLVING CENTRAL PROBLEM
     print('Central Final Total Energy Cost (Lower is better)')
@@ -143,7 +146,8 @@ if __name__ == "__main__":
     ax = fig.add_subplot(projection='3d')
     times = np.linspace(0, Tf, H)
     for i in range(N):
-        _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=1.0/H*1.5)
+        # _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=1.0/H*1.5)
+        _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=1.0/H+EPS)
         ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
         final_trajectories.append(traj)
     obs = plt.Circle((co[0], co[1]), ro, fill=True, alpha=0.2, color='red')
@@ -158,8 +162,8 @@ if __name__ == "__main__":
     final_u, local_sols, fairness = obj.solve_distributed(init_u, steps=10, dyn='quad')
     print('Distributed Final Obj {}'.format(obj.central_obj(final_u.flatten())))
     print(obj.central_obj(final_u.flatten()))
-    print('Solved Inputs')
-    print(final_u)
+    # print('Solved Inputs')
+    # print(final_u)
 
     # METRICS FOR FINAL TRAJECTORY AFTER SOLVING DISTRIBUTED PROBLEM
     print('Final Total Energy Cost (Lower is better)')
@@ -175,7 +179,8 @@ if __name__ == "__main__":
     ax = fig.add_subplot(projection='3d')
     times = np.linspace(0, Tf, H)
     for i in range(N):
-        _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=1.0/H*1.5)
+        # _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=1.0/H*1.5)
+        _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=1.0/H+EPS)
         ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
         final_trajectories.append(traj)
     obs = plt.Circle((co[0], co[1]), ro, fill=True, alpha=0.2, color='red')

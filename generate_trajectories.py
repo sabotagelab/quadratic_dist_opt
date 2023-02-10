@@ -39,8 +39,10 @@ def generate_init_traj_quad(init_pos, goal_pos, H, Tf=1, input_limits=QUAD_INPUT
 
     # Define the goal state:
     posf = goal_pos  # position
-    velf = [0, 0, 1]  # velocity
-    accf = [0, 9.81, 0]  # acceleration
+    # velf = [0, 0, 1]  # velocity
+    velf = [0, 0, 0]  # velocity
+    # accf = [0, 9.81, 0]  # acceleration
+    accf = [0, 0, 0]  # acceleration
 
     # Define the input limits:
     fmin = input_limits['fmin']             #[m/s**2]
