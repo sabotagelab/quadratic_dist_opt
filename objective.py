@@ -244,7 +244,8 @@ class Objective():
         mean_energy = np.mean(np.linalg.norm(u_reshape, axis=0)**2)
         diffs = 0
         for i in range(self.N):
-            diffs += (np.linalg.norm(u_reshape[i])**2 - mean_energy) ** 2
+            # diffs += (np.linalg.norm(u_reshape[i])**2 - mean_energy) ** 2
+            diffs += (np.linalg.norm(u_reshape[i]) - mean_energy) ** 2
     
         fairness = 1/(self.N) * np.sum(diffs)
         return fairness
@@ -265,8 +266,8 @@ class Objective():
         mean_energy = np.mean(np.linalg.norm(u_reshape, axis=0)**2)
         partials = []
         for i in range(self.N):
-            # grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i]) - mean_energy)
-            grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i])**2  - mean_energy)
+            grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i]) - mean_energy)
+            # grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i])**2  - mean_energy)
             # grad_positions = np.gradient(init_trajectories[i], axis=0)  # May have to take system derivative manually
             # partials.append(grad * grad_positions.flatten())
             partials.append(grad)
