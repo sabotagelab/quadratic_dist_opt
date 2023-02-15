@@ -27,6 +27,11 @@ class Objective():
         # self.TakeStep = TakeStep(eps_bounds)
         self.safe_dist = 0.1
         self.dt = dt
+        
+        self.solo_energies = [1 for i in range(self.N)]
+        
+        self.stop_diff = 0.05
+        self.stop = [0 for i in range(self.N)]
 
     def solve_distributed(self, init_u, steps=10, dyn='simple'):
         control_input_size = self.control_input_size
@@ -40,6 +45,8 @@ class Objective():
 
         u = init_u
         fairness = []
+        running_avgs = {i: [] for i in range(self.N)}
+        stop_count = 0
         for s in range(steps):
             # print('Iter {}'.format(s))
             new_eps, sols = self.solve_local(u.flatten(), prev_eps, dyn=dyn)
@@ -49,6 +56,16 @@ class Objective():
 
             fairness.append(self._fairness_central(u))
             prev_eps = new_eps
+
+            for i in range(self.N):
+                curr_avg = np.mean(local_sols[i])
+                running_avgs[i].append(curr_avg)
+                if s > 1:
+                    last_avg = running_avgs[i][s-2]
+                    if np.abs((curr_avg - last_avg)/last_avg) < self.stop_diff:
+                        self.stop[i] = 1
+            if np.sum(self.stop) > self.N/2:
+                break
 
         return u, local_sols, fairness
 
@@ -188,31 +205,94 @@ class Objective():
                     self.avoid_constraint(u)
 
     def avoid_constraint(self, u, grad=False):
+        if grad:
+            return self._avoid_local(u)
+        else:
+            return self._avoid_central(u)
+
+    def _avoid_central(self, u):
         control_input_size = self.control_input_size
         u_reshape = u.reshape((self.N, self.H, control_input_size))
-        num_agents = len(self.init_states)
-        if grad:
-            partials = []
-            for i in range(num_agents):
-                # pos_i = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
-                _, pos_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
-                avoid = 0
-                for j in range(i, num_agents):
-                    # pos_j = generate_agent_states(u_reshape[j], self.init_states[j], model=self.system_model)
-                    _, pos_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
-                    avoid += (pos_i[1:] - pos_j[1:]) / (np.abs(pos_i[1:] - pos_j[1:]) + EPS)
-                partials.append(avoid.flatten())
+        
+        logsum = 0
+        for i in range(self.N):
+            _, positions_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
+            positions_i = positions_i[1:]
+            for j in range(i, self.N):
+                _, positions_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
+                positions_j = positions_j[1:]
             
-            return partials
-        else:
-            avoid = 0
-            for i in range(num_agents):
-                # pos_i = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
-                _, pos_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
-                for j in range(i, num_agents):
-                    _, pos_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
-                    avoid += np.linalg.norm(pos_i - pos_j) - self.safe_dist
-            return -1 * avoid
+                distances = np.linalg.norm(positions_i - positions_j)
+                logsum += np.exp(-1 * self.gamma * (distances ** 2 - self.safe_dist**2))
+        
+        return -1 * self.gamma * np.log(logsum + EPS)  # small EPS in case all distances to obstacle is very far, causing logsum to go to 0)
+
+    def _avoid_local(self, u):
+        control_input_size = self.control_input_size
+        u_reshape = u.reshape((self.N, self.H, control_input_size))
+        
+        x = []
+        logsum = 0
+        for i in range(self.N):
+            _, positions_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
+            positions_i = positions_i[1:]
+            for j in range(i, self.N):
+                _, positions_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
+                positions_j = positions_j[1:]
+            
+                distances = np.linalg.norm(positions_i - positions_j)
+                logsum += np.exp(-1 * self.gamma * (distances ** 2 - self.safe_dist**2))
+            
+            x.append(positions_i)
+
+        x = np.array(x)
+
+        partials = []
+        for i in range(self.N):
+            positions_i = x[i]
+
+            total_distances = 0
+            for j in range(i, self.N):
+                positions_j = x[j]
+                distances_to_obstacle = np.linalg.norm(positions_i - positions_j)
+                total_distances += distances_to_obstacle ** 2 - self.safe_dist**2
+            
+            partial_smoothmin = np.exp(-1 * self.gamma * total_distances) / logsum
+            
+            system_partial = np.gradient(positions_i, axis=0)  # May have to take system derivative manually
+            p = partial_smoothmin * 2 * distances_to_obstacle * system_partial
+            partials.append(p.flatten())
+
+        return partials
+
+
+    # def avoid_constraint(self, u, grad=False):
+    #     control_input_size = self.control_input_size
+    #     u_reshape = u.reshape((self.N, self.H, control_input_size))
+    #     num_agents = len(self.init_states)
+    #     if grad:
+    #         partials = []
+    #         for i in range(num_agents):
+    #             # pos_i = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
+    #             _, pos_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
+    #             avoid = 0
+    #             for j in range(i, num_agents):
+    #                 # pos_j = generate_agent_states(u_reshape[j], self.init_states[j], model=self.system_model)
+    #                 _, pos_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
+    #                 avoid += (pos_i[1:] - pos_j[1:]) / (np.abs(pos_i[1:] - pos_j[1:]) + EPS)
+    #             partials.append(avoid.flatten())
+            
+    #         return partials
+    #     else:
+    #         avoid = 0
+    #         for i in range(num_agents):
+    #             # pos_i = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
+    #             _, pos_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
+    #             for j in range(i, num_agents):
+    #                 _, pos_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
+    #                 avoid += np.linalg.norm(pos_i - pos_j) - self.safe_dist
+    #         return -1 * avoid
+
 
     def quad(self, u, grad=False):
         if grad:
@@ -229,44 +309,30 @@ class Objective():
     
     def _fairness_central(self, u):
         control_input_size = self.control_input_size
-        # u_reshape = u.reshape((self.N, self.H, control_input_size))
-        # print(u_reshape.shape)
-        # print(self.init_states[0].shape)
-        # print(self.init_pos[0].shape)
-        
-        # init_trajectories = []
-        # for i in range(self.N):
-        #     # traj = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
-        #     _, traj = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
-        #     init_trajectories.append(traj)
 
         u_reshape = u.reshape((self.N, control_input_size * self.H))
         mean_energy = np.mean(np.linalg.norm(u_reshape, axis=0)**2)
         diffs = 0
         for i in range(self.N):
             # diffs += (np.linalg.norm(u_reshape[i])**2 - mean_energy) ** 2
-            diffs += (np.linalg.norm(u_reshape[i]) - mean_energy) ** 2
+            # diffs += (np.linalg.norm(u_reshape[i]) - mean_energy) ** 2
+            # NORMALIZE THE NORM BY AGENT SOLO ENERGY
+            diffs += (np.linalg.norm(u_reshape[i])/self.solo_energies[i] - mean_energy) ** 2
     
         fairness = 1/(self.N) * np.sum(diffs)
         return fairness
 
     def _fairness_local(self, u):
         control_input_size = self.control_input_size
-        # u_reshape = u.reshape((self.N, self.H, control_input_size))
-        # init_states = []        
-        # init_trajectories = []
-        # for i in range(self.N):
-        #     # traj = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
-        #     # _, traj = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model)
-        #     states, traj = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
-        #     init_states.append(states[1:])
-        #     init_trajectories.append(traj[1:])
 
         u_reshape = u.reshape((self.N, control_input_size * self.H))
         mean_energy = np.mean(np.linalg.norm(u_reshape, axis=0)**2)
         partials = []
         for i in range(self.N):
-            grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i]) - mean_energy)
+            # grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i]) - mean_energy)
+            # NORMALIZE THE NORM BY AGENT SOLO ENERGY
+            grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i])/self.solo_energies[i] - mean_energy)
+            
             # grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i])**2  - mean_energy)
             # grad_positions = np.gradient(init_trajectories[i], axis=0)  # May have to take system derivative manually
             # partials.append(grad * grad_positions.flatten())
@@ -323,12 +389,28 @@ class Objective():
         for i in range(self.N):
             positions = x[i]
             distances_to_obstacle = np.linalg.norm(positions - c)
-            partial_smoothmin = np.exp(-1 * self.gamma * distances_to_obstacle ** 2 - r**2) / logsum
+            partial_smoothmin = np.exp(-1 * self.gamma * (distances_to_obstacle ** 2 - r**2)) / logsum
             system_partial = np.gradient(positions, axis=0)  # May have to take system derivative manually
             p = partial_smoothmin * 2 * distances_to_obstacle * system_partial
             partials.append(p.flatten())
 
         return partials
+
+    def check_avoid_constraints(self, u):
+        control_input_size = self.control_input_size
+        u_reshape = u.reshape((self.N, self.H, control_input_size))
+
+        # Check Obstacle
+        c = self.obstacles['center']
+        r = self.obstacles['radius']
+        for i in range(self.N):
+            _, positions = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
+            positions = positions[1:]
+            distances_to_obstacle = np.linalg.norm(positions - c, axis=1)
+            if any(dist < r):
+                return
+
+
 
 
 class ReachAvoid():

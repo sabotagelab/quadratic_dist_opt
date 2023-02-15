@@ -188,7 +188,7 @@ if __name__ == "__main__":
     final_trajectories = []
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
-    times = np.linspace(0, Tf, H)
+    times = np.linspace(0, Tf, H)x
     for i in range(N):
         # _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=1.0/H*1.5)
         _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=1.0/H+EPS)

@@ -12,10 +12,9 @@ from trajectorygenerationcodeandreas import quadrocoptertrajectory as quadtraj
 if __name__ == "__main__":
     np.random.seed(42)
 
-    # TODO: ADD BETTER PARAMS FOR OBSTACLE AND GOAL
     parser = argparse.ArgumentParser(description='Centralized Optimization')
     parser.add_argument('--N', type=int, default=3)
-    parser.add_argument('--alpha', type=float, default=1)
+    parser.add_argument('--alpha', type=float, default=0)
     parser.add_argument('--beta', type=float, default=10)
     parser.add_argument('--gamma', type=float, default=1)
     parser.add_argument('--kappa', type=float, default=.1)
@@ -80,13 +79,24 @@ if __name__ == "__main__":
     plt.legend()
     plt.savefig('plots/simple/agent_init_trajectories.png')
     plt.clf()
-     
+
+    solo_energies = []
+    for i in range(N):
+        n = 1*H*control_input_size
+        Q = np.eye(n)
+        obj = Objective(1, H, system_model_config, [init_states[i]], [init_states[i]], obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox)
+        final_obj, final_u = obj.solve_central(init_u[i], steps=args.iter)
+        init_solo_energy = obj.quad(final_u.flatten())
+        solo_energies.append(init_solo_energy)
+
+
     # INIT SOLVER
     # Q = np.eye(N*H*control_input_size)   # variable for quadratic objective
     n = N*H*control_input_size
     Q = np.random.randn(n, n)   # variable for quadratic objective
     Q = Q.T @ Q
     obj = Objective(N, H, system_model_config, init_states, init_states, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox)
+    obj.solo_energies = solo_energies
 
     # METRICS FOR INITIAL TRAJECTORY
     init_obj = obj.quad(init_u.flatten())
