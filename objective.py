@@ -23,8 +23,6 @@ class Objective():
         self.kappa = kappa
         self.eps_bounds = eps_bounds
         self.Ubox = Ubox
-        # self.ReachAvoid = ReachAvoid(Ubox, target, init_states, H, self.control_input_size)
-        # self.TakeStep = TakeStep(eps_bounds)
         self.safe_dist = 0.1
         self.dt = dt
         
@@ -400,70 +398,28 @@ class Objective():
         control_input_size = self.control_input_size
         u_reshape = u.reshape((self.N, self.H, control_input_size))
 
-        # Check Obstacle
+        # Check That All agents avoid Obstacle
         c = self.obstacles['center']
         r = self.obstacles['radius']
         for i in range(self.N):
             _, positions = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
             positions = positions[1:]
             distances_to_obstacle = np.linalg.norm(positions - c, axis=1)
-            if any(dist < r):
-                return
+            # print(distances_to_obstacle)
+            if any(distances_to_obstacle < r):
+                return False
 
+        # Check Collision Avoidance
+        for i in range(self.N):
+            _, positions_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
+            positions_i = positions_i[1:]
+            for j in range(i+1, self.N):
+                _, positions_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
+                positions_j = positions_j[1:]
+                distances_to_obstacle = np.linalg.norm(positions_i - positions_j, axis=1)
+                print(distances_to_obstacle)
+                if any(distances_to_obstacle < self.safe_dist):
+                    return False
 
+        return True
 
-
-class ReachAvoid():
-    # Bounds for basinhopping, https://het.as.utexas.edu/HET/Software/Scipy/generated/scipy.optimize.basinhopping.html
-    def __init__(self, Ubox, target, init_states, H, control_input_size):
-        self.umax = Ubox
-        self.umin = -1 * Ubox
-        self.target_center = target['center']
-        self.target_radius = target['radius']
-        self.init_states = init_states
-        self.H = H
-        self.control_input_size = control_input_size
-    
-    def __call__(self, **kwargs):
-        x = kwargs['x_new']
-        tmax = bool(np.all(x <= self.umax))
-        tmin = bool(np.all(x >= self.umin))
-        # teps = bool(np.all(np.abs(x) >= 0.1))
-        
-        # define constraint on final position based on eps and init state param
-        control_input_size = self.control_input_size
-        target_center = self.target_center
-        target_radius = self.target_radius
-        num_agents = len(self.init_states)
-        for i in range(num_agents):
-            prev_state = self.init_states[i]
-            for j in range(self.H):
-                idx = j*control_input_size
-                # TODO: assuming simple dynamics for now
-                new_state = prev_state.flatten() + 2*x[idx:idx+control_input_size]
-                # print(new_state)
-                prev_state = new_state
-        reach = bool(np.linalg.norm(prev_state - target_center) <= target_radius)
-
-        # print(tmax and tmin, tmax and tmin and reach)
-        if reach:
-            return "force accept"
-        else:
-            return tmax and tmin and reach
-
-
-class TakeStep():
-    def __init__(self, stepsize):
-        self.stepsize = stepsize
-    
-    def __call__(self, x):
-        s = self.stepsize
-        random_change = np.random.uniform(low=-1, high=1, size=x.shape)
-        # sign = np.random.choice([-1, 1])
-        # new_x = x + sign * random_change 
-        new_x = x + random_change 
-        # print(new_x)
-        return new_x
-
-def print_fun(x, f, accepted):
-    print("at minima %.4f accepted %d" % (f, int(accepted)))

@@ -150,6 +150,9 @@ if __name__ == "__main__":
     plt.legend()
     plt.savefig('plots/simple/agent_final_trajectories_central.png')
     plt.clf()
+    
+    valid_sol = obj.check_avoid_constraints(final_u)
+    print('Central: Valid Solution? All Agents Avoid Obstacle: {}'.format(valid_sol))
 
 
     # SOLVE USING DISTRIBUTED OPTIMIZATION
@@ -188,6 +191,9 @@ if __name__ == "__main__":
     plt.legend()
     plt.savefig('plots/simple/agent_final_trajectories_dist.png')
     plt.clf()
+
+    valid_sol = obj.check_avoid_constraints(final_u)
+    print('Distributed: Valid Solution? All Agents Avoid Obstacle: {}'.format(valid_sol))
     
     # Convergence Plot
     for i in range(N):

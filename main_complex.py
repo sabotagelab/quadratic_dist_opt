@@ -164,6 +164,9 @@ if __name__ == "__main__":
     plt.savefig('plots/quad/agent_final_trajectories_central_N{}.png'.format(N))
     plt.clf()
 
+    valid_sol = obj.check_avoid_constraints(final_u)
+    print('Central: Valid Solution? All Agents Avoid Obstacle: {}'.format(valid_sol))
+
     # SOLVE USING DISTRIBUTED OPTIMIZATION
     final_u, local_sols, fairness = obj.solve_distributed(init_u, steps=10, dyn='quad')
 
@@ -188,7 +191,7 @@ if __name__ == "__main__":
     final_trajectories = []
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
-    times = np.linspace(0, Tf, H)x
+    times = np.linspace(0, Tf, H)
     for i in range(N):
         # _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=1.0/H*1.5)
         _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=1.0/H+EPS)
@@ -202,6 +205,9 @@ if __name__ == "__main__":
     art3d.pathpatch_2d_to_3d(goal, z=cg[2])
     plt.savefig('plots/quad/agent_final_trajectories_dist_N{}.png'.format(N))
     plt.clf()
+
+    valid_sol = obj.check_avoid_constraints(final_u)
+    print('Distributed: Valid Solution? All Agents Avoid Obstacle: {}'.format(valid_sol))
 
 
     # Convergence Plot
