@@ -81,8 +81,8 @@ class Objective():
         # Get the partial derivatives
         grad_quad = self.quad(u, grad=True).reshape(self.N, control_input_size * self.H)
         grad_fairness = self.fairness(u, grad=True)
-        grad_obstacle = self.obstacle(u, grad=True)
-        grad_avoid = self.avoid_constraint(u, grad=True)
+        grad_obstacle = self.obstacle(u, grad=True, dyn=dyn)
+        grad_avoid = self.avoid_constraint(u, grad=True, dyn=dyn)
 
         # print('quad shape')
         # print(grad_quad.shape)
@@ -206,9 +206,9 @@ class Objective():
                  self.beta * self.obstacle(u) - \
                     self.beta * self.avoid_constraint(u)
 
-    def avoid_constraint(self, u, grad=False):
+    def avoid_constraint(self, u, grad=False, dyn='simple'):
         if grad:
-            return self._avoid_local(u)
+            return self._avoid_local(u, dyn=dyn)
         else:
             return self._avoid_central(u)
 
@@ -224,12 +224,12 @@ class Objective():
                 _, positions_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
                 positions_j = positions_j[1:]
             
-                distances = np.linalg.norm(positions_i - positions_j)
-                logsum += np.exp(-1 * self.gamma * (distances ** 2 - self.safe_dist**2))
+                distances = np.linalg.norm(positions_i - positions_j, axis=1)
+                logsum += np.sum(np.exp(-1 * self.gamma * (distances ** 2 - self.safe_dist**2)))
         
         return -1 * self.gamma * np.log(logsum + EPS)  # small EPS in case all distances to obstacle is very far, causing logsum to go to 0)
 
-    def _avoid_local(self, u):
+    def _avoid_local(self, u, dyn='simple'):
         control_input_size = self.control_input_size
         u_reshape = u.reshape((self.N, self.H, control_input_size))
         
@@ -242,8 +242,8 @@ class Objective():
                 _, positions_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
                 positions_j = positions_j[1:]
             
-                distances = np.linalg.norm(positions_i - positions_j)
-                logsum += np.exp(-1 * self.gamma * (distances ** 2 - self.safe_dist**2))
+                distances = np.linalg.norm(positions_i - positions_j, axis=1)
+                logsum += np.sum(np.exp(-1 * self.gamma * (distances ** 2 - self.safe_dist**2)))
             
             x.append(positions_i)
 
@@ -256,13 +256,18 @@ class Objective():
             total_distances = 0
             for j in range(i, self.N):
                 positions_j = x[j]
-                distances_to_obstacle = np.linalg.norm(positions_i - positions_j)
-                total_distances += distances_to_obstacle ** 2 - self.safe_dist**2
+                distances_to_obstacle = np.linalg.norm(positions_i - positions_j, axis=1)
+                total_distances += np.sum(distances_to_obstacle ** 2 - self.safe_dist**2)
             
-            partial_smoothmin = np.exp(-1 * self.gamma * total_distances) / logsum
+            partial_smoothmin = np.exp(-1 * self.gamma * total_distances) / (logsum+EPS)
             
-            system_partial = np.gradient(positions_i, axis=0)  # May have to take system derivative manually
-            p = partial_smoothmin * 2 * distances_to_obstacle * system_partial
+            # system_partial = np.gradient(positions_i, axis=0)  # May have to take system derivative manually
+            # p = partial_smoothmin * 2 * distances_to_obstacle * system_partial
+            if dyn == 'simple':
+                system_partial = 2 * np.ones_like(u_reshape[1])
+            else:
+                system_partial = 2 * self.dt * u_reshape[i]
+            p = np.multiply(partial_smoothmin * 2 * distances_to_obstacle, system_partial.T)
             partials.append(p.flatten())
 
         return partials
@@ -319,7 +324,7 @@ class Objective():
             # diffs += (np.linalg.norm(u_reshape[i])**2 - mean_energy) ** 2
             # diffs += (np.linalg.norm(u_reshape[i]) - mean_energy) ** 2
             # NORMALIZE THE NORM BY AGENT SOLO ENERGY
-            diffs += (np.linalg.norm(u_reshape[i])/self.solo_energies[i] - mean_energy) ** 2
+            diffs += (np.linalg.norm(u_reshape[i])/self.solo_energies[i] - mean_energy/self.solo_energies[i]) ** 2
     
         fairness = 1/(self.N) * np.sum(diffs)
         return fairness
@@ -333,7 +338,7 @@ class Objective():
         for i in range(self.N):
             # grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i]) - mean_energy)
             # NORMALIZE THE NORM BY AGENT SOLO ENERGY
-            grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i])/self.solo_energies[i] - mean_energy)
+            grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i])/self.solo_energies[i] - mean_energy/self.solo_energies[i])
             
             # grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i])**2  - mean_energy)
             # grad_positions = np.gradient(init_trajectories[i], axis=0)  # May have to take system derivative manually
@@ -342,9 +347,9 @@ class Objective():
             
         return partials
 
-    def obstacle(self, u, grad=False):
+    def obstacle(self, u, grad=False, dyn='simple'):
         if grad:
-            return self._obstacle_local(u)
+            return self._obstacle_local(u, dyn=dyn)
         else:
             return self._obstacle_central(u)
 
@@ -356,17 +361,16 @@ class Objective():
         
         logsum = 0
         for i in range(self.N):
-            # positions = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
             _, positions = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
             positions = positions[1:]
-            distances_to_obstacle = np.linalg.norm(positions - c)
-            logsum += np.exp(-1 * self.gamma * (
+            distances_to_obstacle = np.linalg.norm(positions - c, axis=1)
+            logsum += np.sum(np.exp(-1 * self.gamma * (
                 distances_to_obstacle ** 2 - r**2
-                ))
+                )))
         
         return -1 * self.gamma * np.log(logsum + EPS)  # small EPS in case all distances to obstacle is very far, causing logsum to go to 0
 
-    def _obstacle_local(self, u):
+    def _obstacle_local(self, u, dyn='simple'):
         control_input_size = self.control_input_size
         u_reshape = u.reshape((self.N, self.H, control_input_size))
         c = self.obstacles['center']
@@ -375,13 +379,12 @@ class Objective():
         x = []
         logsum = EPS
         for i in range(self.N):
-            # positions = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
             _, positions = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
             positions = positions[1:]
-            distances_to_obstacle = np.linalg.norm(positions - c)
-            logsum += np.exp(-1 * self.gamma * (
+            distances_to_obstacle = np.linalg.norm(positions - c, axis=1)
+            logsum += np.sum(np.exp(-1 * self.gamma * (
                 distances_to_obstacle ** 2 - r**2
-                ))
+                )))
             
             x.append(positions)
 
@@ -390,10 +393,13 @@ class Objective():
         partials = []
         for i in range(self.N):
             positions = x[i]
-            distances_to_obstacle = np.linalg.norm(positions - c)
-            partial_smoothmin = np.exp(-1 * self.gamma * (distances_to_obstacle ** 2 - r**2)) / logsum
-            system_partial = np.gradient(positions, axis=0)  # May have to take system derivative manually
-            p = partial_smoothmin * 2 * distances_to_obstacle * system_partial
+            distances_to_obstacle = np.linalg.norm(positions - c, axis=1)
+            partial_smoothmin = np.sum(np.exp(-1 * self.gamma * (distances_to_obstacle ** 2 - r**2))) / (logsum + EPS)
+            if dyn == 'simple':
+                system_partial = 2 * np.ones_like(u_reshape[1])
+            else:
+                system_partial = 2 * self.dt * u_reshape[i]
+            p = np.multiply(partial_smoothmin * 2 * distances_to_obstacle, system_partial.T)
             partials.append(p.flatten())
 
         return partials
