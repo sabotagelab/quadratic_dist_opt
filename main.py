@@ -14,7 +14,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Centralized Optimization')
     parser.add_argument('--N', type=int, default=3)
-    parser.add_argument('--alpha', type=float, default=0)
+    parser.add_argument('--alpha', type=float, default=1)
     parser.add_argument('--beta', type=float, default=10)
     parser.add_argument('--gamma', type=float, default=1)
     parser.add_argument('--kappa', type=float, default=.1)

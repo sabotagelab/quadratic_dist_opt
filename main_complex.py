@@ -6,6 +6,7 @@ import numpy as np
 from objective import Objective
 from generate_trajectories import Quadrocopter
 from generate_trajectories import generate_agent_states, generate_init_traj_quad
+import sys
 
 
 EPS = 1e-2
@@ -13,21 +14,21 @@ EPS = 1e-2
 if __name__ == "__main__":
     np.random.seed(42)
 
-    parser = argparse.ArgumentParser(description='Centralized Optimization')
-    parser.add_argument('--N', type=int, default=3)
+    parser = argparse.ArgumentParser(description='Optimization')
+    parser.add_argument('--N', type=int, default=10)
     parser.add_argument('--H', type=int, default=5)
-    parser.add_argument('--alpha', type=float, default=1)
-    parser.add_argument('--beta', type=float, default=10)
-    parser.add_argument('--gamma', type=float, default=1)
-    parser.add_argument('--kappa', type=float, default=.1)
+    parser.add_argument('--alpha', type=float, default=.001)
+    parser.add_argument('--beta', type=float, default=1)
+    parser.add_argument('--gamma', type=float, default=.1)
+    parser.add_argument('--kappa', type=float, default=0.5)
     parser.add_argument('--eps_bounds', type=float, default=10)
     
-    parser.add_argument('--ro', type=float, default=0.5)
+    parser.add_argument('--ro', type=float, default=.5)
     parser.add_argument('--co', type=float, default=3)
-    parser.add_argument('--rg', type=float, default=0.5)
+    parser.add_argument('--rg', type=float, default=3)
     parser.add_argument('--cg', type=float, default=5)
-    parser.add_argument('--Ubox', type=float, default=50)  # NEED A LARGER UBOX THAN IN THE SIMPLE EXAMPLE
-    parser.add_argument('--iter', type=int, default=100)
+    parser.add_argument('--Ubox', type=float, default=100)  # NEED A LARGER UBOX THAN IN THE SIMPLE EXAMPLE
+    parser.add_argument('--iter', type=int, default=1000)
 
     parser.add_argument('--Tf', type=int, default=1)
 
@@ -54,9 +55,19 @@ if __name__ == "__main__":
     Tf = args.Tf
     
     # SET INITIAL POSITIONS AND STATES
-    init_pos = [np.array([-3, 3, 0]), np.array([-3, -3, 0]), np.array([3, -3, 0])]
+    # init_pos = [np.array([-3, 3, 0]), np.array([-3, -3, 0]), np.array([3, -3, 0])]
+    # x = -5
+    # y = -5
+    x = np.random.uniform(low=-15, high=0, size=1)[0]
+    y = np.random.uniform(low=-15, high=15, size=1)[0]
+
+    init_pos = []
     init_states = []
     for i in range(N):
+        # x = np.random.uniform(low=-15, high=15, size=1)[0]
+        # y = np.random.uniform(low=-15, high=15, size=1)[0]
+        init_pos.append(np.array([x+(i), y, 0]))
+        # init_pos.append(np.array([x, y, 0]))
         s = [init_pos[i]]
         s.append(np.array([0, 0, 0]))  # velo
         init_states.append(np.array(s).flatten())
@@ -88,6 +99,7 @@ if __name__ == "__main__":
         states, traj = generate_agent_states(init_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=Tf/H*1.5)
         ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
         init_trajectories.append(traj)
+        # print(traj)
     obs = plt.Circle((co[0], co[1]), ro, fill=True, alpha=0.2, color='red')
     ax.add_patch(obs)
     art3d.pathpatch_2d_to_3d(obs, z=co[2])
@@ -97,17 +109,29 @@ if __name__ == "__main__":
     plt.savefig('plots/quad/agent_init_trajectories_N{}.png'.format(N))
     plt.clf()
 
-
-    # INIT SOLVER
+    # GENERATE SOLO ENERGIES
+    print('Generating Solo Energies')
     system_model = Quadrocopter
     control_input_size = 3
     system_model_config = (Quadrocopter, control_input_size)
+    solo_energies = []
+    for i in range(N):
+        n = 1*H*control_input_size
+        Q = np.eye(n)
+        obj = Objective(1, H, system_model_config, [init_states[i]], [init_pos[i]], obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=Tf/H*1.5)
+        final_obj, final_u = obj.solve_central(init_u[i], steps=args.iter)
+        init_solo_energy = obj.quad(final_u.flatten())
+        solo_energies.append(init_solo_energy)
 
+    # INIT SOLVER
+    print('Solving Central Problem')
     n = N*H*control_input_size
+    # Q = np.eye(n)
     Q = np.random.randn(n, n)   # variable for quadratic objective
     Q = Q.T @ Q
-    # obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=Tf/H*1.5)
-    obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=Tf/H+EPS)
+    obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=Tf/H*1.5)
+    print(obj.reach_constraint(init_u.flatten()))
+    obj.solo_energies = solo_energies
 
     # METRICS FOR INITIAL TRAJECTORY
     init_obj = obj.quad(init_u.flatten())
@@ -127,48 +151,52 @@ if __name__ == "__main__":
 
     # SOLVE USING CENTRAL
     final_obj, final_u = obj.solve_central(init_u, steps=args.iter)
+    if len(final_u) != 0:
+        # METRICS FOR FINAL TRAJECTORY AFTER SOLVING CENTRAL PROBLEM
+        central_sol_obj = final_obj
+        print('Central Final Obj {}'.format(central_sol_obj))
+        final_u = final_u.reshape(N, H, control_input_size)    
+        print('Central Final Total Energy Cost (Lower is better)')
+        central_sol_energy = obj.quad(final_u.flatten())
+        print(central_sol_energy)
+        print('Central Final Fairness (Close to 0 is better)')
+        central_sol_fairness = obj.fairness(final_u.flatten())
+        print(central_sol_fairness)
+        print('Central Final Obstacle Avoidance Cost (More Negative Is Better)')
+        central_sol_obstacle = obj.obstacle(final_u.flatten())
+        print(central_sol_obstacle)
+        print('Central Final Collision Avoidance Cost (More Negative Is Better)')
+        central_sol_collision = obj.avoid_constraint(final_u.flatten())
+        print(central_sol_collision)
 
-    # METRICS FOR FINAL TRAJECTORY AFTER SOLVING CENTRAL PROBLEM
-    central_sol_obj = final_obj
-    print('Central Final Obj {}'.format(central_sol_obj))
-    final_u = final_u.reshape(N, H, control_input_size)    
-    print('Central Final Total Energy Cost (Lower is better)')
-    central_sol_energy = obj.quad(final_u.flatten())
-    print(central_sol_energy)
-    print('Central Final Fairness (Close to 0 is better)')
-    central_sol_fairness = obj.fairness(final_u.flatten())
-    print(central_sol_fairness)
-    print('Central Final Obstacle Avoidance Cost (More Negative Is Better)')
-    central_sol_obstacle = obj.obstacle(final_u.flatten())
-    print(central_sol_obstacle)
-    print('Central Final Collision Avoidance Cost (More Negative Is Better)')
-    central_sol_collision = obj.avoid_constraint(final_u.flatten())
-    print(central_sol_collision)
+        # PLOT FINAL TRAEJECTORIES FROM CONTROL INPUTS
+        final_trajectories = []
+        fig = plt.figure()
+        ax = fig.add_subplot(projection='3d')
+        times = np.linspace(0, Tf, H)
+        for i in range(N):
+            _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=Tf/H*1.5)
+            ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
+            final_trajectories.append(traj)
+        obs = plt.Circle((co[0], co[1]), ro, fill=True, alpha=0.2, color='red')
+        ax.add_patch(obs)
+        art3d.pathpatch_2d_to_3d(obs, z=co[2])
+        goal = plt.Circle((cg[0], cg[1]), rg, fill=True, alpha=0.2, color='green')
+        ax.add_patch(goal)
+        art3d.pathpatch_2d_to_3d(goal, z=cg[2])
+        plt.savefig('plots/quad/agent_final_trajectories_central_N{}.png'.format(N))
+        plt.clf()
 
-    # PLOT FINAL TRAEJECTORIES FROM CONTROL INPUTS
-    final_trajectories = []
-    fig = plt.figure()
-    ax = fig.add_subplot(projection='3d')
-    times = np.linspace(0, Tf, H)
-    for i in range(N):
-        # _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=1.0/H*1.5)
-        _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=1.0/H+EPS)
-        ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
-        final_trajectories.append(traj)
-    obs = plt.Circle((co[0], co[1]), ro, fill=True, alpha=0.2, color='red')
-    ax.add_patch(obs)
-    art3d.pathpatch_2d_to_3d(obs, z=co[2])
-    goal = plt.Circle((cg[0], cg[1]), rg, fill=True, alpha=0.2, color='green')
-    ax.add_patch(goal)
-    art3d.pathpatch_2d_to_3d(goal, z=cg[2])
-    plt.savefig('plots/quad/agent_final_trajectories_central_N{}.png'.format(N))
-    plt.clf()
-
-    valid_sol = obj.check_avoid_constraints(final_u)
-    print('Central: Valid Solution? All Agents Avoid Obstacle: {}'.format(valid_sol))
+        valid_sol = obj.check_avoid_constraints(final_u)
+        print('Central: Valid Solution? All Agents Avoid Obstacle: {}'.format(valid_sol))
+    else:
+        print('Could Not solve Central')
 
     # SOLVE USING DISTRIBUTED OPTIMIZATION
-    final_u, local_sols, fairness = obj.solve_distributed(init_u, steps=10, dyn='quad')
+    final_u, local_sols, fairness = obj.solve_distributed(init_u, steps=args.iter, dyn='quad')
+    if len(fairness) == 0:
+        print('Cannot Solve Distributed Problem')
+        sys.exit()
 
     # METRICS FOR FINAL TRAJECTORY AFTER SOLVING DISTRIBUTED PROBLEM
     dist_sol_obj = obj.central_obj(final_u.flatten())
@@ -193,8 +221,8 @@ if __name__ == "__main__":
     ax = fig.add_subplot(projection='3d')
     times = np.linspace(0, Tf, H)
     for i in range(N):
-        # _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=1.0/H*1.5)
-        _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=1.0/H+EPS)
+        _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=Tf/H*1.5)
+        # _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=1.0/H+EPS)
         ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
         final_trajectories.append(traj)
     obs = plt.Circle((co[0], co[1]), ro, fill=True, alpha=0.2, color='red')
@@ -250,43 +278,43 @@ if __name__ == "__main__":
     plt.savefig('plots/quad/objective_values_comparison_N{}.png'.format(N))
     plt.clf()
 
-    # Objective Comparison Plot
-    plt.hlines(dist_sol_obj, xmin=0, xmax=args.iter, linestyles='solid', label='Distributed Objective Value')
-    plt.hlines(central_sol_obj, xmin=0, xmax=args.iter, linestyles='dashed', label='Central Objective Value')
-    plt.hlines(init_obj, xmin=0, xmax=args.iter, linestyles='dotted', label='Initial Objective Value')
-    plt.legend()
-    plt.savefig('plots/quad/final_objective_value_comparison_N{}.png'.format(N))
-    plt.clf()
+    # # Objective Comparison Plot
+    # plt.hlines(dist_sol_obj, xmin=0, xmax=args.iter, linestyles='solid', label='Distributed Objective Value')
+    # plt.hlines(central_sol_obj, xmin=0, xmax=args.iter, linestyles='dashed', label='Central Objective Value')
+    # plt.hlines(init_obj, xmin=0, xmax=args.iter, linestyles='dotted', label='Initial Objective Value')
+    # plt.legend()
+    # plt.savefig('plots/quad/final_objective_value_comparison_N{}.png'.format(N))
+    # plt.clf()
 
-    # Energy Comparison Plot
-    plt.hlines(dist_sol_energy, xmin=0, xmax=args.iter, linestyles='solid', label='Distributed Objective Value')
-    plt.hlines(central_sol_energy, xmin=0, xmax=args.iter, linestyles='dashed', label='Central Objective Value')
-    plt.hlines(init_energy, xmin=0, xmax=args.iter, linestyles='dotted', label='Initial Objective Value')
-    plt.legend()
-    plt.savefig('plots/quad/final_energy_value_comparison_N{}.png'.format(N))
-    plt.clf()
+    # # Energy Comparison Plot
+    # plt.hlines(dist_sol_energy, xmin=0, xmax=args.iter, linestyles='solid', label='Distributed Objective Value')
+    # plt.hlines(central_sol_energy, xmin=0, xmax=args.iter, linestyles='dashed', label='Central Objective Value')
+    # plt.hlines(init_energy, xmin=0, xmax=args.iter, linestyles='dotted', label='Initial Objective Value')
+    # plt.legend()
+    # plt.savefig('plots/quad/final_energy_value_comparison_N{}.png'.format(N))
+    # plt.clf()
 
-    # Fairness Comparison Plot
-    plt.hlines(dist_sol_fairness, xmin=0, xmax=args.iter, linestyles='solid', label='Distributed Objective Value')
-    plt.hlines(central_sol_fairness, xmin=0, xmax=args.iter, linestyles='dashed', label='Central Objective Value')
-    plt.hlines(init_fairness, xmin=0, xmax=args.iter, linestyles='dotted', label='Initial Objective Value')
-    plt.legend()
-    plt.savefig('plots/quad/final_fairness_value_comparison_N{}.png'.format(N))
-    plt.clf()
+    # # Fairness Comparison Plot
+    # plt.hlines(dist_sol_fairness, xmin=0, xmax=args.iter, linestyles='solid', label='Distributed Objective Value')
+    # plt.hlines(central_sol_fairness, xmin=0, xmax=args.iter, linestyles='dashed', label='Central Objective Value')
+    # plt.hlines(init_fairness, xmin=0, xmax=args.iter, linestyles='dotted', label='Initial Objective Value')
+    # plt.legend()
+    # plt.savefig('plots/quad/final_fairness_value_comparison_N{}.png'.format(N))
+    # plt.clf()
 
-    # Obstacle Avoidance Comparison Plot
-    plt.hlines(dist_sol_obstacle, xmin=0, xmax=args.iter, linestyles='solid', label='Distributed Objective Value')
-    plt.hlines(central_sol_obstacle, xmin=0, xmax=args.iter, linestyles='dashed', label='Central Objective Value')
-    plt.hlines(init_obstacle, xmin=0, xmax=args.iter, linestyles='dotted', label='Initial Objective Value')
-    plt.legend()
-    plt.savefig('plots/quad/final_obstacle_value_comparison_N{}.png'.format(N))
-    plt.clf()
+    # # Obstacle Avoidance Comparison Plot
+    # plt.hlines(dist_sol_obstacle, xmin=0, xmax=args.iter, linestyles='solid', label='Distributed Objective Value')
+    # plt.hlines(central_sol_obstacle, xmin=0, xmax=args.iter, linestyles='dashed', label='Central Objective Value')
+    # plt.hlines(init_obstacle, xmin=0, xmax=args.iter, linestyles='dotted', label='Initial Objective Value')
+    # plt.legend()
+    # plt.savefig('plots/quad/final_obstacle_value_comparison_N{}.png'.format(N))
+    # plt.clf()
 
-    # Collision Avoidance Comparison Plot
-    plt.hlines(dist_sol_collision, xmin=0, xmax=args.iter, linestyles='solid', label='Distributed Objective Value')
-    plt.hlines(central_sol_collision, xmin=0, xmax=args.iter, linestyles='dashed', label='Central Objective Value')
-    plt.hlines(init_collision, xmin=0, xmax=args.iter, linestyles='dotted', label='Initial Objective Value')
-    plt.legend()
-    plt.savefig('plots/quad/final_collision_value_comparison_N{}.png'.format(N))
-    plt.clf()
+    # # Collision Avoidance Comparison Plot
+    # plt.hlines(dist_sol_collision, xmin=0, xmax=args.iter, linestyles='solid', label='Distributed Objective Value')
+    # plt.hlines(central_sol_collision, xmin=0, xmax=args.iter, linestyles='dashed', label='Central Objective Value')
+    # plt.hlines(init_collision, xmin=0, xmax=args.iter, linestyles='dotted', label='Initial Objective Value')
+    # plt.legend()
+    # plt.savefig('plots/quad/final_collision_value_comparison_N{}.png'.format(N))
+    # plt.clf()
 

@@ -48,6 +48,9 @@ class Objective():
         for s in range(steps):
             # print('Iter {}'.format(s))
             new_eps, sols = self.solve_local(u.flatten(), prev_eps, dyn=dyn)
+            if len(new_eps) == 0:
+                return [], [], []
+
             for i in range(self.N):
                 u[i] += new_eps[i].reshape((self.H, control_input_size))
                 local_sols[i].append(sols[i])
@@ -94,7 +97,7 @@ class Objective():
         local_sols = []
         for i in range(self.N):
             curr_agent_u = u.reshape((self.N, self.H, control_input_size))[i].flatten()
-            grad = grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - grad_avoid[i]
+            grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
             prev_eps_param = cp.Parameter(self.H * control_input_size, value=prev_eps[i])
 
@@ -161,7 +164,9 @@ class Objective():
 
             prob = cp.Problem(objective, constraints)
             prob.solve(verbose=False)
-            # print('Agent {} Problem Status {}'.format(i, prob.status))
+            if prob.status == 'infeasible':
+                print('Agent {} Problem Status {}'.format(i, prob.status))
+                return [], []
             solved_values.append(eps.value)
             local_sols.append(prob.value)
 
@@ -171,10 +176,10 @@ class Objective():
         func = self.central_obj
         x0 = init_u.flatten()
         
-        # res = basinhopping(func, x0, niter=steps, accept_test=self.ReachAvoid, callback=print_fun)
-        # res = basinhopping(func, x0, niter=steps, take_step=self.TakeStep, accept_test=self.ReachAvoid, callback=print_fun)
-        # res = basinhopping(func, x0, niter=steps, accept_test=self.ReachAvoid)
-        res = minimize(func, x0, bounds=Bounds(lb=-self.Ubox, ub=self.Ubox), constraints=NonlinearConstraint(self.reach_constraint, -np.inf, 0))
+        res = minimize(func, x0, bounds=Bounds(lb=-self.Ubox, ub=self.Ubox), constraints=NonlinearConstraint(self.reach_constraint, -np.inf, 0), options={'maxiter':steps}) #method='L-BFGS-B')
+        if not res.success:
+            print(res.message)
+            return np.inf, []
         final_u = res.x
         final_obj = res.fun
 
@@ -189,18 +194,17 @@ class Objective():
         num_agents = len(self.init_states)
         reach = 0
         for i in range(num_agents):
-            # pos_i = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
             _, pos_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
-            final_pos = pos_i[self.H]
+            final_pos = pos_i[len(pos_i)-1]
             reach += np.linalg.norm(final_pos - target_center)**2 - target_radius**2
         return reach
 
     
     def central_obj(self, u):
-        return self.quad(u) + \
+        return self.alpha * self.quad(u) + \
             self.alpha * self.fairness(u) - \
-                 self.beta * self.obstacle(u) + \
-                    self.avoid_constraint(u)
+                 self.beta * self.obstacle(u) - \
+                    self.beta * self.avoid_constraint(u)
 
     def avoid_constraint(self, u, grad=False):
         if grad:
@@ -230,7 +234,7 @@ class Objective():
         u_reshape = u.reshape((self.N, self.H, control_input_size))
         
         x = []
-        logsum = 0
+        logsum = EPS
         for i in range(self.N):
             _, positions_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
             positions_i = positions_i[1:]
@@ -369,7 +373,7 @@ class Objective():
         r = self.obstacles['radius']
         
         x = []
-        logsum = 0
+        logsum = EPS
         for i in range(self.N):
             # positions = generate_agent_states(u_reshape[i], self.init_states[i], model=self.system_model)
             _, positions = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
@@ -417,7 +421,7 @@ class Objective():
                 _, positions_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
                 positions_j = positions_j[1:]
                 distances_to_obstacle = np.linalg.norm(positions_i - positions_j, axis=1)
-                print(distances_to_obstacle)
+                # print(distances_to_obstacle)
                 if any(distances_to_obstacle < self.safe_dist):
                     return False
 
