@@ -7,7 +7,7 @@ EPS = 1e-8
 
 class Objective():
     def __init__(self, N, H, system_model_config, init_states, init_pos, obstacles, target,\
-        Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=0.1):
+        Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=0.1, notion=0):
         self.N = N
         self.H = H
         self.system_model = system_model_config[0]
@@ -30,6 +30,7 @@ class Objective():
         
         self.stop_diff = 0.05
         self.stop = [0 for i in range(self.N)]
+        self.notion = notion
 
     def solve_distributed(self, init_u, steps=10, dyn='simple'):
         control_input_size = self.control_input_size
@@ -65,7 +66,7 @@ class Objective():
                     last_avg = running_avgs[i][s-2]
                     if np.abs((curr_avg - last_avg)/last_avg) < self.stop_diff:
                         self.stop[i] = 1
-            if np.sum(self.stop) > self.N/2:
+            if np.sum(self.stop) > (0.75 * self.N):
                 break
 
         return u, local_sols, fairness
@@ -80,7 +81,10 @@ class Objective():
 
         # Get the partial derivatives
         grad_quad = self.quad(u, grad=True).reshape(self.N, control_input_size * self.H)
-        grad_fairness = self.fairness(u, grad=True)
+        if self.notion <= 2:
+            grad_fairness = self.fairness(u, grad=True)
+        else:
+            grad_fairness = self.surge_fairness(u, grad=True)
         grad_obstacle = self.obstacle(u, grad=True, dyn=dyn)
         grad_avoid = self.avoid_constraint(u, grad=True, dyn=dyn)
 
@@ -97,7 +101,15 @@ class Objective():
         local_sols = []
         for i in range(self.N):
             curr_agent_u = u.reshape((self.N, self.H, control_input_size))[i].flatten()
-            grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
+            if self.notion == 0:  ## the basic fairness notion, uTQu + f1
+                grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
+            elif self.notion == 1:  ## no fairness, uTQu only
+                grad = self.alpha * grad_quad[i] + - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
+            elif self.notion == 2:  # no fairness, no uTQu term
+                grad = - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
+            else:
+                # use surge fairness 
+                grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
             prev_eps_param = cp.Parameter(self.H * control_input_size, value=prev_eps[i])
 
@@ -201,10 +213,23 @@ class Objective():
 
     
     def central_obj(self, u):
-        return self.alpha * self.quad(u) + \
-            self.alpha * self.fairness(u) - \
-                 self.beta * self.obstacle(u) - \
-                    self.beta * self.avoid_constraint(u)
+        if self.notion == 0:  ## the basic fairness notion, uTQu + f1
+            return self.alpha * self.quad(u) + \
+                self.alpha * self.fairness(u) - \
+                self.beta * self.obstacle(u) - \
+                self.beta * self.avoid_constraint(u)
+        elif self.notion == 1:  ## no fairness, uTQu only
+            return self.alpha * self.quad(u) + \
+                self.beta * self.obstacle(u) - \
+                self.beta * self.avoid_constraint(u)
+        elif self.notion == 2:  # no fairness, no uTQu term
+            return - self.beta * self.obstacle(u) - self.beta * self.avoid_constraint(u)
+        else:
+            # use surge fairness 
+            return self.alpha * self.quad(u) + \
+                self.alpha * self.surge_fairness(u) - \
+                self.beta * self.obstacle(u) - \
+                self.beta * self.avoid_constraint(u)
 
     def avoid_constraint(self, u, grad=False, dyn='simple'):
         if grad:
@@ -317,12 +342,11 @@ class Objective():
     def _fairness_central(self, u):
         control_input_size = self.control_input_size
 
-        u_reshape = u.reshape((self.N, control_input_size * self.H))
-        mean_energy = np.mean(np.linalg.norm(u_reshape, axis=0)**2)
+        u_reshape = u.reshape((self.N, self.H, control_input_size))
+        agent_sum_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1)
+        mean_energy = np.mean(agent_sum_energies)
         diffs = 0
         for i in range(self.N):
-            # diffs += (np.linalg.norm(u_reshape[i])**2 - mean_energy) ** 2
-            # diffs += (np.linalg.norm(u_reshape[i]) - mean_energy) ** 2
             # NORMALIZE THE NORM BY AGENT SOLO ENERGY
             diffs += (np.linalg.norm(u_reshape[i])/self.solo_energies[i] - mean_energy/self.solo_energies[i]) ** 2
     
@@ -332,20 +356,66 @@ class Objective():
     def _fairness_local(self, u):
         control_input_size = self.control_input_size
 
-        u_reshape = u.reshape((self.N, control_input_size * self.H))
-        mean_energy = np.mean(np.linalg.norm(u_reshape, axis=0)**2)
+        u_reshape = u.reshape((self.N, self.H, control_input_size))
+        agent_sum_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1)
+        mean_energy = np.mean(agent_sum_energies)
         partials = []
         for i in range(self.N):
-            # grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i]) - mean_energy)
             # NORMALIZE THE NORM BY AGENT SOLO ENERGY
             grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i])/self.solo_energies[i] - mean_energy/self.solo_energies[i])
-            
-            # grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i])**2  - mean_energy)
-            # grad_positions = np.gradient(init_trajectories[i], axis=0)  # May have to take system derivative manually
-            # partials.append(grad * grad_positions.flatten())
             partials.append(grad)
             
         return partials
+
+    def surge_fairness(self, u, grad=False):
+        if grad:
+            f = self._surge_fairness_local(u)
+            return f
+        else:
+            return self._surge_fairness_central(u)
+
+    def _surge_fairness_central(self, u):
+        control_input_size = self.control_input_size
+
+        u_reshape = u.reshape((self.N, self.H, control_input_size))
+        energies = np.linalg.norm(u_reshape, axis=2)**2
+        agent_mean_energies = np.mean(energies, axis=1)
+        surges = np.diff(energies)
+        surges = surges - np.min(surges) / (np.max(surges) - np.min(surges))
+        surge_thresh = np.mean(surges) + np.std(surges)
+
+        agent_total_over_surge = []
+        for i in range(self.N):
+            # agent_total_over_surge.append(np.sum(1 / (1 + np.exp(-1*(surges[i] - surge_thresh)))))
+            agent_total_over_surge.append(np.sum(surges[i] - surge_thresh))
+    
+        fairness = np.var(agent_total_over_surge)
+        return fairness
+
+    def _surge_fairness_local(self, u):
+        control_input_size = self.control_input_size
+
+        u_reshape = u.reshape((self.N, self.H, control_input_size))
+        energies = np.linalg.norm(u_reshape, axis=2)**2
+        agent_mean_energies = np.mean(energies, axis=1)
+        surges = np.diff(energies)
+        surges = surges - np.min(surges) / (np.max(surges) - np.min(surges))
+        surge_thresh = np.mean(surges) + np.std(surges)
+
+        agent_total_over_surge = []
+        for i in range(self.N):
+            # agent_total_over_surge.append(np.sum(1 / (1 + np.exp(-1*(surges[i] - surge_thresh)))))
+            agent_total_over_surge.append(np.sum(surges[i] - surge_thresh))
+        
+        mean_agent_surge = np.mean(agent_total_over_surge)
+        partials = []
+        for i in range(self.N):
+            # sig = 1 / (1 + np.exp(-1*(surges[i] - surge_thresh)))
+            # sig_div = sig * (1 - sig)
+            grad = 2 * (1/self.N) * (agent_total_over_surge[i] - mean_agent_surge) #* np.sum(sig_div)
+            partials.append(grad)   
+
+        return partials 
 
     def obstacle(self, u, grad=False, dyn='simple'):
         if grad:
