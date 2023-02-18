@@ -64,12 +64,16 @@ class Objective():
                 running_avgs[i].append(curr_avg)
                 if s > 1:
                     last_avg = running_avgs[i][s-2]
+                    # print('diff change')
+                    # print(np.abs((curr_avg - last_avg)/last_avg))
                     if np.abs((curr_avg - last_avg)/last_avg) < self.stop_diff:
                         self.stop[i] = 1
+                    else:
+                        self.stop[i] = 0
             if np.sum(self.stop) > (0.75 * self.N):
                 break
 
-        return u, local_sols, fairness
+        return u, local_sols, fairness, s
 
 
     def solve_local(self, u, prev_eps, dyn='simple'):

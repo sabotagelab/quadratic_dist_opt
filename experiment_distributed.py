@@ -66,7 +66,7 @@ Tf = args.Tf
 trials = args.trials
 
 # CREATE CSV TO SAVE RESULTS
-csv_cols = ['trial_num', 'success', 'obj', 'energy', 'fairness', 'obstacle', 'collision', 'walltime', 'cputime']
+csv_cols = ['trial_num', 'success', 'obj', 'energy', 'fairness', 'obstacle', 'collision', 'walltime', 'cputime', 'converge_iter']
 csv_name = 'results/distributed_{}_N{}_H{}_{}.csv'.format(results_file, N, H, datetime.now())
 file_obj = open(csv_name, 'a')
 writer_obj = writer(file_obj)
@@ -120,7 +120,7 @@ for trial in range(trials):
     st = time.time()
     stp = time.process_time()
     try:
-        final_u, local_sols, fairness = obj.solve_distributed(init_u, steps=args.iter, dyn='quad')
+        final_u, local_sols, fairness, converge_iter = obj.solve_distributed(init_u, steps=args.iter, dyn='quad')
         success = 0 if len(fairness) == 0 else 1
         # if len(fairness) == 0:
         #     print('Cannot Solve Distributed Problem')
@@ -128,6 +128,7 @@ for trial in range(trials):
     except BaseException:
         print('Solver Error')
         success = 0
+        converge_iter = 0
     etp = time.process_time()
     et = time.time()
     walltime = et - st
@@ -152,7 +153,7 @@ for trial in range(trials):
 
     print('Trial {} Result: {}'.format(trial, valid_sol))
 
-    res = [trial, valid_sol, dist_sol_obj, dist_sol_energy, dist_sol_fairness, dist_sol_obstacle, dist_sol_collision, walltime, cputime]
+    res = [trial, valid_sol, dist_sol_obj, dist_sol_energy, dist_sol_fairness, dist_sol_obstacle, dist_sol_collision, walltime, cputime, converge_iter]
 
     writer_obj.writerow(res)
 
