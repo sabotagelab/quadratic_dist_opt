@@ -81,6 +81,7 @@ for trial in range(trials):
         init_pos = []
         init_states = []
         for i in range(N):
+            # init_pos.append(np.array([x, y+i, 0]))
             init_pos.append(np.array([x+(i), y, 0]))
             s = [init_pos[i]]
             s.append(np.array([0, 0, 0]))  # velo

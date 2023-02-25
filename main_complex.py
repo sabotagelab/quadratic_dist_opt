@@ -15,7 +15,7 @@ if __name__ == "__main__":
     np.random.seed(42)
 
     parser = argparse.ArgumentParser(description='Optimization')
-    parser.add_argument('--N', type=int, default=10)
+    parser.add_argument('--N', type=int, default=7)
     parser.add_argument('--H', type=int, default=5)
     parser.add_argument('--alpha', type=float, default=.001)
     parser.add_argument('--beta', type=float, default=1)
@@ -23,7 +23,7 @@ if __name__ == "__main__":
     parser.add_argument('--kappa', type=float, default=0.5)
     parser.add_argument('--eps_bounds', type=float, default=25)
     
-    parser.add_argument('--ro', type=float, default=.5)
+    parser.add_argument('--ro', type=float, default=0.5)
     parser.add_argument('--co', type=float, default=3)
     parser.add_argument('--rg', type=float, default=5)
     parser.add_argument('--cg', type=float, default=5)
@@ -35,7 +35,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    notion = 0
+    notion = 5
     N = args.N  # number of agents
     alpha = args.alpha   # parameter for fairness constraint
     beta = args.beta    # parameter for weighting of obstacle avoidance constraint
@@ -150,51 +150,52 @@ if __name__ == "__main__":
     init_collision = obj.avoid_constraint(init_u.flatten())
     print(init_collision)
 
-    # SOLVE USING CENTRAL
-    final_obj, final_u = obj.solve_central(init_u, steps=args.iter)
-    if len(final_u) != 0:
-        # METRICS FOR FINAL TRAJECTORY AFTER SOLVING CENTRAL PROBLEM
-        central_sol_obj = final_obj
-        print('Central Final Obj {}'.format(central_sol_obj))
-        final_u = final_u.reshape(N, H, control_input_size)    
-        print('Central Final Total Energy Cost (Lower is better)')
-        central_sol_energy = obj.quad(final_u.flatten())
-        print(central_sol_energy)
-        print('Central Final Fairness (Close to 0 is better)')
-        central_sol_fairness = obj.fairness(final_u.flatten())
-        print(central_sol_fairness)
-        print('Central Final Obstacle Avoidance Cost (More Negative Is Better)')
-        central_sol_obstacle = obj.obstacle(final_u.flatten())
-        print(central_sol_obstacle)
-        print('Central Final Collision Avoidance Cost (More Negative Is Better)')
-        central_sol_collision = obj.avoid_constraint(final_u.flatten())
-        print(central_sol_collision)
+    # # SOLVE USING CENTRAL
+    # final_obj, final_u = obj.solve_central(init_u, steps=args.iter)
+    # if len(final_u) != 0:
+    #     # METRICS FOR FINAL TRAJECTORY AFTER SOLVING CENTRAL PROBLEM
+    #     central_sol_obj = final_obj
+    #     print('Central Final Obj {}'.format(central_sol_obj))
+    #     final_u = final_u.reshape(N, H, control_input_size)    
+    #     print('Central Final Total Energy Cost (Lower is better)')
+    #     central_sol_energy = obj.quad(final_u.flatten())
+    #     print(central_sol_energy)
+    #     print('Central Final Fairness (Close to 0 is better)')
+    #     central_sol_fairness = obj.fairness(final_u.flatten())
+    #     print(central_sol_fairness)
+    #     print('Central Final Obstacle Avoidance Cost (More Negative Is Better)')
+    #     central_sol_obstacle = obj.obstacle(final_u.flatten())
+    #     print(central_sol_obstacle)
+    #     print('Central Final Collision Avoidance Cost (More Negative Is Better)')
+    #     central_sol_collision = obj.avoid_constraint(final_u.flatten())
+    #     print(central_sol_collision)
 
-        # PLOT FINAL TRAEJECTORIES FROM CONTROL INPUTS
-        final_trajectories = []
-        fig = plt.figure()
-        ax = fig.add_subplot(projection='3d')
-        times = np.linspace(0, Tf, H)
-        for i in range(N):
-            _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=Tf/H*1.5)
-            ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
-            final_trajectories.append(traj)
-        obs = plt.Circle((co[0], co[1]), ro, fill=True, alpha=0.2, color='red')
-        ax.add_patch(obs)
-        art3d.pathpatch_2d_to_3d(obs, z=co[2])
-        goal = plt.Circle((cg[0], cg[1]), rg, fill=True, alpha=0.2, color='green')
-        ax.add_patch(goal)
-        art3d.pathpatch_2d_to_3d(goal, z=cg[2])
-        plt.savefig('plots/quad/agent_final_trajectories_central_N{}.png'.format(N))
-        plt.clf()
+    #     # PLOT FINAL TRAEJECTORIES FROM CONTROL INPUTS
+    #     final_trajectories = []
+    #     fig = plt.figure()
+    #     ax = fig.add_subplot(projection='3d')
+    #     times = np.linspace(0, Tf, H)
+    #     for i in range(N):
+    #         _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=Tf/H*1.5)
+    #         ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
+    #         final_trajectories.append(traj)
+    #     obs = plt.Circle((co[0], co[1]), ro, fill=True, alpha=0.2, color='red')
+    #     ax.add_patch(obs)
+    #     art3d.pathpatch_2d_to_3d(obs, z=co[2])
+    #     goal = plt.Circle((cg[0], cg[1]), rg, fill=True, alpha=0.2, color='green')
+    #     ax.add_patch(goal)
+    #     art3d.pathpatch_2d_to_3d(goal, z=cg[2])
+    #     # plt.savefig('plots/quad/agent_final_trajectories_central_N{}.png'.format(N))
+    #     plt.show()
+    #     # plt.clf()
 
-        valid_sol = obj.check_avoid_constraints(final_u)
-        print('Central: Valid Solution? All Agents Avoid Obstacle: {}'.format(valid_sol))
-    else:
-        print('Could Not solve Central')
+    #     valid_sol = obj.check_avoid_constraints(final_u)
+    #     print('Central: Valid Solution? All Agents Avoid Obstacle: {}'.format(valid_sol))
+    # else:
+    #     print('Could Not solve Central')
 
     # SOLVE USING DISTRIBUTED OPTIMIZATION
-    final_u, local_sols, fairness = obj.solve_distributed(init_u, steps=args.iter, dyn='quad')
+    final_u, local_sols, fairness, _ = obj.solve_distributed(init_u, steps=args.iter, dyn='quad')
     if len(fairness) == 0:
         print('Cannot Solve Distributed Problem')
         sys.exit()
@@ -232,9 +233,9 @@ if __name__ == "__main__":
     goal = plt.Circle((cg[0], cg[1]), rg, fill=True, alpha=0.2, color='green')
     ax.add_patch(goal)
     art3d.pathpatch_2d_to_3d(goal, z=cg[2])
-    plt.savefig('plots/quad/agent_final_trajectories_dist_N{}.png'.format(N))
-    # plt.show()
-    plt.clf()
+    # plt.savefig('plots/quad/agent_final_trajectories_dist_N{}.png'.format(N))
+    plt.show()
+    # plt.clf()
 
     valid_sol = obj.check_avoid_constraints(final_u)
     print('Distributed: Valid Solution? All Agents Avoid Obstacle: {}'.format(valid_sol))

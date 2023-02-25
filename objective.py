@@ -85,10 +85,10 @@ class Objective():
 
         # Get the partial derivatives
         grad_quad = self.quad(u, grad=True).reshape(self.N, control_input_size * self.H)
-        if self.notion <= 2:
-            grad_fairness = self.fairness(u, grad=True)
-        else:
+        if self.notion in [3, 5]:
             grad_fairness = self.surge_fairness(u, grad=True)
+        else:
+            grad_fairness = self.fairness(u, grad=True)
         grad_obstacle = self.obstacle(u, grad=True, dyn=dyn)
         grad_avoid = self.avoid_constraint(u, grad=True, dyn=dyn)
 
@@ -107,13 +107,14 @@ class Objective():
             curr_agent_u = u.reshape((self.N, self.H, control_input_size))[i].flatten()
             if self.notion == 0:  ## the basic fairness notion, uTQu + f1
                 grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-            elif self.notion == 1:  ## no fairness, uTQu only
+            elif self.notion == 1:  # no fairness, uTQu only
                 grad = self.alpha * grad_quad[i] + - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
             elif self.notion == 2:  # no fairness, no uTQu term
                 grad = - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-            else:
-                # use surge fairness 
+            elif self.notion == 3:  # surge fairness
                 grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
+            else:  # f1 or f2 only
+                grad = self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
             prev_eps_param = cp.Parameter(self.H * control_input_size, value=prev_eps[i])
 
@@ -228,10 +229,17 @@ class Objective():
                 self.beta * self.avoid_constraint(u)
         elif self.notion == 2:  # no fairness, no uTQu term
             return - self.beta * self.obstacle(u) - self.beta * self.avoid_constraint(u)
-        else:
-            # use surge fairness 
+        elif self.notion == 3:  # use surge fairness 
             return self.alpha * self.quad(u) + \
                 self.alpha * self.surge_fairness(u) - \
+                self.beta * self.obstacle(u) - \
+                self.beta * self.avoid_constraint(u)
+        elif self.notion == 4:  #f1 only
+            return self.alpha * self.fairness(u) - \
+                self.beta * self.obstacle(u) - \
+                self.beta * self.avoid_constraint(u)
+        else:  # f2 only
+            return self.alpha * self.surge_fairness(u) - \
                 self.beta * self.obstacle(u) - \
                 self.beta * self.avoid_constraint(u)
 
@@ -501,8 +509,9 @@ class Objective():
                 _, positions_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
                 positions_j = positions_j[1:]
                 distances_to_obstacle = np.linalg.norm(positions_i - positions_j, axis=1)
-                # print(distances_to_obstacle)
                 if any(distances_to_obstacle < self.safe_dist):
+                    print('collision')
+                    print(distances_to_obstacle)
                     return False
 
         return True

@@ -85,6 +85,7 @@ for trial in range(trials):
         for i in range(N):
             # x = np.random.uniform(low=-15, high=15, size=1)[0]
             # y = np.random.uniform(low=-15, high=15, size=1)[0]
+            # init_pos.append(np.array([x, y+(i), 0]))
             init_pos.append(np.array([x+(i), y, 0]))
             # init_pos.append(np.array([x, y, 0]))
             s = [init_pos[i]]
