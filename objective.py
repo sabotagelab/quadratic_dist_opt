@@ -68,8 +68,8 @@ class Objective():
                     # print(np.abs((curr_avg - last_avg)/last_avg))
                     if np.abs((curr_avg - last_avg)/last_avg) < self.stop_diff:
                         self.stop[i] = 1
-                    else:
-                        self.stop[i] = 0
+                    #else:
+                    #    self.stop[i] = 0
             if np.sum(self.stop) > (0.75 * self.N):
                 break
 
@@ -415,16 +415,19 @@ class Objective():
         surge_thresh = np.mean(surges) + np.std(surges)
 
         agent_total_over_surge = []
+        sk_div = []
         for i in range(self.N):
             # agent_total_over_surge.append(np.sum(1 / (1 + np.exp(-1*(surges[i] - surge_thresh)))))
             agent_total_over_surge.append(np.sum(surges[i] - surge_thresh))
+            sk_div.append(2*(np.linalg.norm(u_reshape[i][self.H-1]) - np.linalg.norm(u_reshape[i][0])))
         
         mean_agent_surge = np.mean(agent_total_over_surge)
         partials = []
         for i in range(self.N):
             # sig = 1 / (1 + np.exp(-1*(surges[i] - surge_thresh)))
             # sig_div = sig * (1 - sig)
-            grad = 2 * (1/self.N) * (agent_total_over_surge[i] - mean_agent_surge) #* np.sum(sig_div)
+            # grad = 2 * (1/self.N) * (agent_total_over_surge[i] - mean_agent_surge) #* np.sum(sig_div)
+            grad = 2 * (1/self.N) * (agent_total_over_surge[i] - mean_agent_surge) * sk_div[i]
             partials.append(grad)   
 
         return partials 
