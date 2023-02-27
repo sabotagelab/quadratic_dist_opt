@@ -209,11 +209,13 @@ class Objective():
         target_center = self.target['center']
         target_radius = self.target['radius']
         num_agents = len(self.init_states)
-        reach = 0
+        # reach = 0
+        reach = -np.inf
         for i in range(num_agents):
             _, pos_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
             final_pos = pos_i[len(pos_i)-1]
-            reach += np.linalg.norm(final_pos - target_center)**2 - target_radius**2
+            # reach += (np.linalg.norm(final_pos - target_center)**2 - target_radius**2)
+            reach = np.maximum(reach, np.linalg.norm(final_pos - target_center) - target_radius)
         return reach
 
     
@@ -493,15 +495,23 @@ class Objective():
         control_input_size = self.control_input_size
         u_reshape = u.reshape((self.N, self.H, control_input_size))
 
-        # Check That All agents avoid Obstacle
+        # Check That All agents avoid Obstacle AND REACH GOAL
         c = self.obstacles['center']
         r = self.obstacles['radius']
+        cg = self.target['center']
+        rg = self.target['radius']
         for i in range(self.N):
             _, positions = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
+            final_p = positions[self.H]
             positions = positions[1:]
             distances_to_obstacle = np.linalg.norm(positions - c, axis=1)
             # print(distances_to_obstacle)
             if any(distances_to_obstacle < r):
+                return False
+            distance_to_target = np.linalg.norm(final_p - cg) - 0.001
+            if distance_to_target > rg:
+                print('doesnt reach')
+                print(i, distance_to_target)
                 return False
 
         # Check Collision Avoidance

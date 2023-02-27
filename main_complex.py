@@ -2,6 +2,7 @@ import argparse
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.art3d as art3d
 import numpy as np
+from skspatial.objects import Sphere
 
 from objective import Objective
 from generate_trajectories import Quadrocopter
@@ -15,7 +16,7 @@ if __name__ == "__main__":
     np.random.seed(42)
 
     parser = argparse.ArgumentParser(description='Optimization')
-    parser.add_argument('--N', type=int, default=7)
+    parser.add_argument('--N', type=int, default=5)
     parser.add_argument('--H', type=int, default=5)
     parser.add_argument('--alpha', type=float, default=.001)
     parser.add_argument('--beta', type=float, default=1)
@@ -25,7 +26,7 @@ if __name__ == "__main__":
     
     parser.add_argument('--ro', type=float, default=0.5)
     parser.add_argument('--co', type=float, default=3)
-    parser.add_argument('--rg', type=float, default=5)
+    parser.add_argument('--rg', type=float, default=3)
     parser.add_argument('--cg', type=float, default=5)
     parser.add_argument('--Ubox', type=float, default=100)  # NEED A LARGER UBOX THAN IN THE SIMPLE EXAMPLE
     parser.add_argument('--iter', type=int, default=1000)
@@ -35,7 +36,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    notion = 5
+    notion = 0
     N = args.N  # number of agents
     alpha = args.alpha   # parameter for fairness constraint
     beta = args.beta    # parameter for weighting of obstacle avoidance constraint
@@ -177,14 +178,20 @@ if __name__ == "__main__":
         times = np.linspace(0, Tf, H)
         for i in range(N):
             _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=Tf/H*1.5)
-            ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
+            # ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
+            ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
             final_trajectories.append(traj)
-        obs = plt.Circle((co[0], co[1]), ro, fill=True, alpha=0.2, color='red')
-        ax.add_patch(obs)
-        art3d.pathpatch_2d_to_3d(obs, z=co[2])
-        goal = plt.Circle((cg[0], cg[1]), rg, fill=True, alpha=0.2, color='green')
-        ax.add_patch(goal)
-        art3d.pathpatch_2d_to_3d(goal, z=cg[2])
+        print(traj)
+        obs_sphere = Sphere([co[0], co[1], co[2]], ro)
+        obs_sphere.plot_3d(ax, alpha=0.2, color='red')
+        # obs = plt.Circle((co[0], co[1]), ro, fill=True, alpha=0.2, color='red')
+        # ax.add_patch(obs)
+        # art3d.pathpatch_2d_to_3d(obs, z=co[2])
+        goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
+        goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+        # goal = plt.Circle((cg[0], cg[1]), rg, fill=True, alpha=0.2, color='green')
+        # ax.add_patch(goal)
+        # art3d.pathpatch_2d_to_3d(goal, z=cg[2])
         # plt.savefig('plots/quad/agent_final_trajectories_central_N{}.png'.format(N))
         plt.show()
         # plt.clf()
@@ -225,14 +232,18 @@ if __name__ == "__main__":
     for i in range(N):
         _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=Tf/H*1.5)
         # _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=1.0/H+EPS)
-        ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
+        ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
         final_trajectories.append(traj)
-    obs = plt.Circle((co[0], co[1]), ro, fill=True, alpha=0.2, color='red')
-    ax.add_patch(obs)
-    art3d.pathpatch_2d_to_3d(obs, z=co[2])
-    goal = plt.Circle((cg[0], cg[1]), rg, fill=True, alpha=0.2, color='green')
-    ax.add_patch(goal)
-    art3d.pathpatch_2d_to_3d(goal, z=cg[2])
+    obs_sphere = Sphere([co[0], co[1], co[2]], ro)
+    obs_sphere.plot_3d(ax, alpha=0.2, color='red')
+    # obs = plt.Circle((co[0], co[1]), ro, fill=True, alpha=0.2, color='red')
+    # ax.add_patch(obs)
+    # art3d.pathpatch_2d_to_3d(obs, z=co[2])
+    goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
+    goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+    # goal = plt.Circle((cg[0], cg[1]), rg, fill=True, alpha=0.2, color='green')
+    # ax.add_patch(goal)
+    # art3d.pathpatch_2d_to_3d(goal, z=cg[2])
     # plt.savefig('plots/quad/agent_final_trajectories_dist_N{}.png'.format(N))
     plt.show()
     # plt.clf()
