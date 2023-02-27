@@ -68,7 +68,8 @@ Tf = args.Tf
 trials = args.trials
 
 # CREATE CSV TO SAVE RESULTS
-csv_cols = ['trial_num', 'success', 'obj', 'energy', 'fairness', 'obstacle', 'collision', 'walltime', 'cputime']
+# csv_cols = ['trial_num', 'success', 'obj', 'energy', 'fairness', 'obstacle', 'collision', 'walltime', 'cputime']
+csv_cols = ['trial_num', 'success', 'obj', 'energy', 'f1', 'f4', 'obstacle', 'collision', 'walltime', 'cputime']
 csv_name = 'results/central_{}_N{}_H{}_{}.csv'.format(results_file, N, H, datetime.now())
 file_obj = open(csv_name, 'a')
 writer_obj = writer(file_obj)
@@ -139,20 +140,23 @@ for trial in range(trials):
         valid_sol = obj.check_avoid_constraints(final_u)
         central_sol_obj = final_obj
         central_sol_energy = obj.quad(final_u.flatten())
-        central_sol_fairness = obj.fairness(final_u.flatten())
+        central_sol_fairness1 = obj.fairness(final_u.flatten())  # f1
+        central_sol_fairness4 = obj.surge_fairness(final_u.flatten())  # f4
         central_sol_obstacle = obj.obstacle(final_u.flatten())
         central_sol_collision = obj.avoid_constraint(final_u.flatten())
     else: 
         valid_sol = False
         central_sol_obj = 0
         central_sol_energy = 0
-        central_sol_fairness = 0
+        central_sol_fairness1 = 0
+        central_sol_fairness4 = 0
         central_sol_obstacle = 0
         central_sol_collision = 0
 
     print('Trial {} Result: {}'.format(trial, valid_sol))
 
-    res = [trial, valid_sol, central_sol_obj, central_sol_energy, central_sol_fairness, central_sol_obstacle, central_sol_collision, walltime, cputime]
+    # csv_cols = ['trial_num', 'success', 'obj', 'energy', 'f1', 'f4', 'obstacle', 'collision', 'walltime', 'cputime']
+    res = [trial, valid_sol, central_sol_obj, central_sol_energy, central_sol_fairness1, central_sol_fairness4, central_sol_obstacle, central_sol_collision, walltime, cputime]
 
     writer_obj.writerow(res)
 
