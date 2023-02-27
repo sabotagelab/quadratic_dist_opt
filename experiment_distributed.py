@@ -72,6 +72,7 @@ file_obj = open(csv_name, 'a')
 writer_obj = writer(file_obj)
 writer_obj.writerow(csv_cols)
 
+exp_start_time = time.time()
 for trial in range(trials):
     if (trial % 10) == 0:
         # SET INITIAL POSITIONS AND STATES
@@ -157,6 +158,10 @@ for trial in range(trials):
     res = [trial, valid_sol, dist_sol_obj, dist_sol_energy, dist_sol_fairness, dist_sol_obstacle, dist_sol_collision, walltime, cputime, converge_iter]
 
     writer_obj.writerow(res)
+
+    if time.time() - exp_start_time > 3600:
+        print('Killing Exp Early')
+        break
 
 file_obj.close()
 
