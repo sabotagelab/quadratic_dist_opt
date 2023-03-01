@@ -168,4 +168,3 @@ for trial in range(trials):
         break
 
 file_obj.close()
-

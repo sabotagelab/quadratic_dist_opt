@@ -36,7 +36,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    notion = 0
+    notion = 2
     N = args.N  # number of agents
     alpha = args.alpha   # parameter for fairness constraint
     beta = args.beta    # parameter for weighting of obstacle avoidance constraint

@@ -89,9 +89,9 @@ class Objective():
             grad_fairness = self.surge_fairness(u, grad=True)
         else:
             grad_fairness = self.fairness(u, grad=True)
-        # grad_obstacle = self.obstacle(u, grad=True, dyn=dyn)
-        # grad_avoid = self.avoid_constraint(u, grad=True, dyn=dyn)
-        avoid = self._full_avoid_local(u, dyn=dyn)
+        grad_obstacle = self.obstacle(u, grad=True, dyn=dyn)
+        grad_avoid = self.avoid_constraint(u, grad=True, dyn=dyn)
+        # avoid = self._full_avoid_local(u, dyn=dyn)
 
         # print('quad shape')
         # print(grad_quad.shape)
@@ -107,20 +107,20 @@ class Objective():
         for i in range(self.N):
             curr_agent_u = u.reshape((self.N, self.H, control_input_size))[i].flatten()
             if self.notion == 0:  ## the basic fairness notion, uTQu + f1
-                # grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-                grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * avoid[i]
+                grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
+                # grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * avoid[i]
             elif self.notion == 1:  # no fairness, uTQu only
-                # grad = self.alpha * grad_quad[i] + - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-                grad = self.alpha * grad_quad[i] + - self.beta * avoid[i]
+                grad = self.alpha * grad_quad[i] + - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
+                # grad = self.alpha * grad_quad[i] + - self.beta * avoid[i]
             elif self.notion == 2:  # no fairness, no uTQu term
-                # grad = - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-                grad = - self.beta * avoid[i]
+                grad = - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
+                # grad = - self.beta * avoid[i]
             elif self.notion == 3:  # surge fairness
-                # grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-                grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * avoid[i]
+                grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
+                # grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * avoid[i]
             else:  # f1 or f2 only
-                # grad = self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-                grad = self.alpha * grad_fairness[i] - self.beta * avoid[i]
+                grad = self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
+                # grad = self.alpha * grad_fairness[i] - self.beta * avoid[i]
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
             prev_eps_param = cp.Parameter(self.H * control_input_size, value=prev_eps[i])
 
@@ -257,7 +257,8 @@ class Objective():
                 # self.beta * self.obstacle(u) - \
                 # self.beta * self.avoid_constraint(u)
         elif self.notion == 2:  # no fairness, no uTQu term
-            return - self.beta * self.obstacle(u) - self.beta * self.avoid_constraint(u)
+            # return - self.beta * self.obstacle(u) - self.beta * self.avoid_constraint(u)
+            return 0
         elif self.notion == 3:  # use surge fairness 
             return self.alpha * self.quad(u) + \
                 self.alpha * self.surge_fairness(u)
