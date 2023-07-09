@@ -1,0 +1,14 @@
+.DS_Store
+.idea/
+Bonmin-1.8.8/
+attic/
+plots/
+__pycache__/
+RapidQuadrocopterTrajectories-master/
+results/
+trajectorygenerationcodeandreas/__init__.py
+trajectorygenerationcodeandreas/__pycache__/
+trajectorygenerationcodeandreas/demo.py
+trajectorygenerationcodeandreas/linear.py
+trajectorygenerationcodeandreas/linear_traj_plot.py
+trajectorygenerationcodeandreas/noise.py
