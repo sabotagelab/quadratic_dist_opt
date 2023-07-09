@@ -16,7 +16,7 @@ if __name__ == "__main__":
     np.random.seed(42)
 
     parser = argparse.ArgumentParser(description='Optimization')
-    parser.add_argument('--N', type=int, default=5)
+    parser.add_argument('--N', type=int, default=3)
     parser.add_argument('--H', type=int, default=5)
     parser.add_argument('--alpha', type=float, default=.001)
     parser.add_argument('--beta', type=float, default=1)
@@ -36,7 +36,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    notion = 2
+    notion = 0
     N = args.N  # number of agents
     alpha = args.alpha   # parameter for fairness constraint
     beta = args.beta    # parameter for weighting of obstacle avoidance constraint
