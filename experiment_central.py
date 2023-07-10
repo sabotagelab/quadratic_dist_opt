@@ -68,7 +68,6 @@ Tf = args.Tf
 trials = args.trials
 
 # CREATE CSV TO SAVE RESULTS
-# csv_cols = ['trial_num', 'success', 'obj', 'energy', 'fairness', 'obstacle', 'collision', 'walltime', 'cputime']
 csv_cols = ['trial_num', 'success', 'obj', 'energy', 'f1', 'f4', 'obstacle', 'collision', 'walltime', 'cputime']
 csv_name = 'results/central_{}_N{}_H{}_{}.csv'.format(results_file, N, H, datetime.now())
 file_obj = open(csv_name, 'a')
@@ -85,11 +84,7 @@ for trial in range(trials):
         init_pos = []
         init_states = []
         for i in range(N):
-            # x = np.random.uniform(low=-15, high=15, size=1)[0]
-            # y = np.random.uniform(low=-15, high=15, size=1)[0]
-            # init_pos.append(np.array([x, y+(i), 0]))
             init_pos.append(np.array([x+(i), y, 0]))
-            # init_pos.append(np.array([x, y, 0]))
             s = [init_pos[i]]
             s.append(np.array([0, 0, 0]))  # velo
             init_states.append(np.array(s).flatten())
@@ -118,7 +113,6 @@ for trial in range(trials):
 
     # INIT SOLVER
     n = N*H*control_input_size
-    # Q = np.eye(n)
     Q = np.random.randn(n, n)   # variable for quadratic objective
     Q = Q.T @ Q
     obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=Tf/H*1.5, notion=notion)
@@ -134,7 +128,6 @@ for trial in range(trials):
     cputime = etp - stp
 
     # Save Results to File
-    # ['trial_num', 'success', 'obj', 'energy', 'fairness', 'obstacle', 'collision', 'walltime', 'cputime']
     success = 0 if len(final_u) == 0 else 1
     if success == 1:
         valid_sol = obj.check_avoid_constraints(final_u)
@@ -155,7 +148,6 @@ for trial in range(trials):
 
     print('Trial {} Result: {}'.format(trial, valid_sol))
 
-    # csv_cols = ['trial_num', 'success', 'obj', 'energy', 'f1', 'f4', 'obstacle', 'collision', 'walltime', 'cputime']
     res = [trial, valid_sol, central_sol_obj, central_sol_energy, central_sol_fairness1, central_sol_fairness4, central_sol_obstacle, central_sol_collision, walltime, cputime]
 
     writer_obj.writerow(res)
@@ -165,4 +157,3 @@ for trial in range(trials):
         break
 
 file_obj.close()
-

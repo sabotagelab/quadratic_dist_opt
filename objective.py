@@ -64,12 +64,8 @@ class Objective():
                 running_avgs[i].append(curr_avg)
                 if s > 1:
                     last_avg = running_avgs[i][s-2]
-                    # print('diff change')
-                    # print(np.abs((curr_avg - last_avg)/last_avg))
                     if np.abs((curr_avg - last_avg)/last_avg) < self.stop_diff:
                         self.stop[i] = 1
-                    #else:
-                    #    self.stop[i] = 0
             if np.sum(self.stop) > (0.75 * self.N):
                 break
 
@@ -91,16 +87,7 @@ class Objective():
             grad_fairness = self.fairness(u, grad=True)
         grad_obstacle = self.obstacle(u, grad=True, dyn=dyn)
         grad_avoid = self.avoid_constraint(u, grad=True, dyn=dyn)
-        # avoid = self._full_avoid_local(u, dyn=dyn)
 
-        # print('quad shape')
-        # print(grad_quad.shape)
-        # print('fairness shape')
-        # print(grad_fairness[0].shape)
-        # print('obstacle shape')
-        # print(grad_obstacle[0].shape)
-        # print('avoid shape')
-        # print(grad_avoid[0].shape)
 
         solved_values = []
         local_sols = []
@@ -108,19 +95,14 @@ class Objective():
             curr_agent_u = u.reshape((self.N, self.H, control_input_size))[i].flatten()
             if self.notion == 0:  ## the basic fairness notion, uTQu + f1
                 grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-                # grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * avoid[i]
             elif self.notion == 1:  # no fairness, uTQu only
                 grad = self.alpha * grad_quad[i] + - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-                # grad = self.alpha * grad_quad[i] + - self.beta * avoid[i]
             elif self.notion == 2:  # no fairness, no uTQu term
                 grad = - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-                # grad = - self.beta * avoid[i]
             elif self.notion == 3:  # surge fairness
                 grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-                # grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * avoid[i]
             else:  # f1 or f2 only
                 grad = self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-                # grad = self.alpha * grad_fairness[i] - self.beta * avoid[i]
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
             prev_eps_param = cp.Parameter(self.H * control_input_size, value=prev_eps[i])
 
@@ -170,11 +152,8 @@ class Objective():
                 final_pos = prev_state
 
             # define local objective
-            # objective = cp.Minimize(-1 * (stack.T @ grad_param) + \
-            #     self.kappa * cp.norm(eps - prev_eps_param)**2)
             objective = cp.Minimize(-1 * (eps.T @ grad_param) + \
-                self.kappa * cp.norm(eps - prev_eps_param)**2 )#+ \
-                    # (cp.norm(prev_state - target_center)**2 - target_radius**2))
+                self.kappa * cp.norm(eps - prev_eps_param)**2 )
 
             # define local constraints
             constraints = [
@@ -199,7 +178,6 @@ class Objective():
         func = self.central_obj
         x0 = init_u.flatten()
         
-        # res = minimize(func, x0, bounds=Bounds(lb=-self.Ubox, ub=self.Ubox), constraints=NonlinearConstraint(self.reach_constraint, -np.inf, 0), options={'maxiter':steps}) #method='L-BFGS-B')
         res = minimize(func, x0, bounds=Bounds(lb=-self.Ubox, ub=self.Ubox), 
                        constraints=[NonlinearConstraint(self.reach_constraint, -np.inf, 0),
                                     NonlinearConstraint(self.full_avoid_constraint, 0, np.inf)], 
@@ -249,29 +227,28 @@ class Objective():
     def central_obj(self, u):
         if self.notion == 0:  ## the basic fairness notion, uTQu + f1
             return self.alpha * self.quad(u) + \
-                self.alpha * self.fairness(u)
-                # self.beta * self.obstacle(u) - \
-                # self.beta * self.avoid_constraint(u)
+                self.alpha * self.fairness(u) - \
+                self.beta * self.obstacle(u) - \
+                self.beta * self.avoid_constraint(u)
         elif self.notion == 1:  ## no fairness, uTQu only
-            return self.alpha * self.quad(u)
-                # self.beta * self.obstacle(u) - \
-                # self.beta * self.avoid_constraint(u)
+            return self.alpha * self.quad(u) - \
+                self.beta * self.obstacle(u) - \
+                self.beta * self.avoid_constraint(u)
         elif self.notion == 2:  # no fairness, no uTQu term
-            # return - self.beta * self.obstacle(u) - self.beta * self.avoid_constraint(u)
             return 0
         elif self.notion == 3:  # use surge fairness 
             return self.alpha * self.quad(u) + \
-                self.alpha * self.surge_fairness(u)
-                # self.beta * self.obstacle(u) - \
-                # self.beta * self.avoid_constraint(u)
+                self.alpha * self.surge_fairness(u) - \
+                self.beta * self.obstacle(u) - \
+                self.beta * self.avoid_constraint(u)
         elif self.notion == 4:  #f1 only
-            return self.alpha * self.fairness(u)
-                # self.beta * self.obstacle(u) - \
-                # self.beta * self.avoid_constraint(u)
+            return self.alpha * self.fairness(u) - \
+                self.beta * self.obstacle(u) - \
+                self.beta * self.avoid_constraint(u)
         else:  # f2 only
-            return self.alpha * self.surge_fairness(u) 
-                # self.beta * self.obstacle(u) - \
-                # self.beta * self.avoid_constraint(u)
+            return self.alpha * self.surge_fairness(u) - \
+                self.beta * self.obstacle(u) - \
+                self.beta * self.avoid_constraint(u)
 
     def avoid_constraint(self, u, grad=False, dyn='simple'):
         if grad:
@@ -328,8 +305,6 @@ class Objective():
             
             partial_smoothmin = np.exp(-1 * self.gamma * total_distances) / (logsum+EPS)
             
-            # system_partial = np.gradient(positions_i, axis=0)  # May have to take system derivative manually
-            # p = partial_smoothmin * 2 * distances_to_obstacle * system_partial
             if dyn == 'simple':
                 system_partial = 2 * np.ones_like(u_reshape[1])
             else:
@@ -400,7 +375,6 @@ class Objective():
 
         agent_total_over_surge = []
         for i in range(self.N):
-            # agent_total_over_surge.append(np.sum(1 / (1 + np.exp(-1*(surges[i] - surge_thresh)))))
             agent_total_over_surge.append(np.sum(surges[i] - surge_thresh))
     
         fairness = np.var(agent_total_over_surge)
@@ -419,16 +393,12 @@ class Objective():
         agent_total_over_surge = []
         sk_div = []
         for i in range(self.N):
-            # agent_total_over_surge.append(np.sum(1 / (1 + np.exp(-1*(surges[i] - surge_thresh)))))
             agent_total_over_surge.append(np.sum(surges[i] - surge_thresh))
             sk_div.append(2*(np.linalg.norm(u_reshape[i][self.H-1]) - np.linalg.norm(u_reshape[i][0])))
         
         mean_agent_surge = np.mean(agent_total_over_surge)
         partials = []
         for i in range(self.N):
-            # sig = 1 / (1 + np.exp(-1*(surges[i] - surge_thresh)))
-            # sig_div = sig * (1 - sig)
-            # grad = 2 * (1/self.N) * (agent_total_over_surge[i] - mean_agent_surge) #* np.sum(sig_div)
             grad = 2 * (1/self.N) * (agent_total_over_surge[i] - mean_agent_surge) * sk_div[i]
             partials.append(grad)   
 
@@ -557,7 +527,6 @@ class Objective():
             final_p = positions[self.H]
             positions = positions[1:]
             distances_to_obstacle = np.linalg.norm(positions - c, axis=1)
-            # print(distances_to_obstacle)
             if any(distances_to_obstacle < r):
                 return False
             distance_to_target = np.linalg.norm(final_p - cg) - 0.001
@@ -580,4 +549,4 @@ class Objective():
                     return False
 
         return True
-
+    
