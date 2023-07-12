@@ -67,7 +67,7 @@ trials = args.trials
 
 # CREATE CSV TO SAVE RESULTS
 csv_cols = ['trial_num', 'success', 'obj', 'energy', 'f1', 'f4', 'obstacle', 'collision', 'walltime', 'cputime']
-csv_name = 'results/distributed_{}_N{}_H{}_{}.csv'.format(results_file, N, H, datetime.now())
+csv_name = 'test_results/distributed_{}_N{}_H{}_{}.csv'.format(results_file, N, H, datetime.now())
 file_obj = open(csv_name, 'a')
 writer_obj = writer(file_obj)
 writer_obj.writerow(csv_cols)
@@ -117,13 +117,26 @@ for trial in range(trials):
     obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=Tf/H*1.5, notion=args.notion)
     obj.solo_energies = solo_energies
 
+    # SOLVE FIRST USING CENTRAL BUT NO FAIRNESS ADDED, ONLY REACH AVOID FUNCTION
+    central_obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=Tf/H*1.5, notion=2)
+    central_obj.solo_energies = solo_energies
+    basic_obj, basic_u = obj.solve_central(init_u, steps=args.iter)
+
+    basic_success = 0 if len(basic_u) == 0 else 1
+    if basic_success == 0:
+        print('Unable to make basic solution work, not trying to make basic solution fair')
+        continue
+
     # SOLVE USING DISTRIBUTED
     st = time.time()
     stp = time.process_time()
     try:
-        final_u, local_sols, fairness, converge_iter = obj.solve_distributed(init_u, steps=args.iter, dyn='quad')
+        # final_u, local_sols, fairness, converge_iter = obj.solve_distributed(init_u, steps=args.iter, dyn='quad')
+        basic_u = basic_u.reshape((N, H, control_input_size))
+        final_u, local_sols, fairness, converge_iter = obj.solve_distributed(basic_u, steps=args.iter, dyn='quad')
         success = 0 if len(fairness) == 0 else 1
-    except BaseException:
+    except BaseException as e:
+        print(e)
         print('Solver Error')
         success = 0
         converge_iter = 0

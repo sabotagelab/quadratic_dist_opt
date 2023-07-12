@@ -235,7 +235,8 @@ class Objective():
                 self.beta * self.obstacle(u) - \
                 self.beta * self.avoid_constraint(u)
         elif self.notion == 2:  # no fairness, no uTQu term
-            return 0
+            # return 0
+            return - self.beta * self.obstacle(u) - self.beta * self.avoid_constraint(u)
         elif self.notion == 3:  # use surge fairness 
             return self.alpha * self.quad(u) + \
                 self.alpha * self.surge_fairness(u) - \
