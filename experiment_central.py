@@ -146,11 +146,12 @@ for trial in range(trials):
         # Save Final Solution To File For use in Distributed Experiment
         if args.notion == 20:
             base_case_res = np.load(bc_obj_name)
+            init_pos_and_final_u = np.append(np.array(init_pos).flatten(), final_u.flatten())
             if base_case_res.size == 0:
-                np.save(bc_obj_name, final_u.flatten().reshape((1, n)))
+                np.save(bc_obj_name, init_pos_and_final_u.reshape((1, (3*N)+n)))
                 del base_case_res
                 continue    
-            base_case_res = np.append(base_case_res, final_u.flatten().reshape((1, n)), axis=0)
+            base_case_res = np.append(base_case_res, init_pos_and_final_u.reshape((1, (3*N)+n)), axis=0)
             np.save(bc_obj_name, base_case_res)
             del base_case_res
     else: 
