@@ -177,10 +177,14 @@ class Objective():
     def solve_central(self, init_u, steps=200):
         func = self.central_obj
         x0 = init_u.flatten()
+
+        constraints=[NonlinearConstraint(self.reach_constraint, -np.inf, 0)]
+
+        if self.notion == 20:
+            constraints.append(NonlinearConstraint(self.full_avoid_constraint, 0, np.inf))
         
         res = minimize(func, x0, bounds=Bounds(lb=-self.Ubox, ub=self.Ubox), 
-                       constraints=[NonlinearConstraint(self.reach_constraint, -np.inf, 0),
-                                    NonlinearConstraint(self.full_avoid_constraint, 0, np.inf)], 
+                       constraints=constraints,
                        options={'maxiter':steps})
         if not res.success:
             print(res.message)
@@ -234,7 +238,7 @@ class Objective():
             return self.alpha * self.quad(u) - \
                 self.beta * self.obstacle(u) - \
                 self.beta * self.avoid_constraint(u)
-        elif self.notion == 2:  # no fairness, no uTQu term
+        elif self.notion in [2, 20]:  # no fairness, no uTQu term
             # return 0
             return - self.beta * self.obstacle(u) - self.beta * self.avoid_constraint(u)
         elif self.notion == 3:  # use surge fairness 

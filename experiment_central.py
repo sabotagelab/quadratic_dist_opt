@@ -74,6 +74,11 @@ file_obj = open(csv_name, 'a')
 writer_obj = writer(file_obj)
 writer_obj.writerow(csv_cols)
 
+if args.notion == 20:
+    bc_obj_name = 'test_results/base_case_central_N{}_H{}_{}.npy'.format(N, H, datetime.now())
+    base_case_res = []
+    np.save(bc_obj_name, np.array(base_case_res))
+
 exp_start_time = time.time()
 for trial in range(trials):
     if (trial % 10) == 0:
@@ -137,6 +142,17 @@ for trial in range(trials):
         central_sol_fairness4 = obj.surge_fairness(final_u.flatten())  # f4
         central_sol_obstacle = obj.obstacle(final_u.flatten())
         central_sol_collision = obj.avoid_constraint(final_u.flatten())
+
+        # Save Final Solution To File For use in Distributed Experiment
+        if args.notion == 20:
+            base_case_res = np.load(bc_obj_name)
+            if base_case_res.size == 0:
+                np.save(bc_obj_name, final_u.flatten().reshape((1, n)))
+                del base_case_res
+                continue    
+            base_case_res = np.append(base_case_res, final_u.flatten().reshape((1, n)), axis=0)
+            np.save(bc_obj_name, base_case_res)
+            del base_case_res
     else: 
         valid_sol = False
         central_sol_obj = 0
@@ -152,7 +168,7 @@ for trial in range(trials):
 
     writer_obj.writerow(res)
 
-    if time.time() - exp_start_time > 3600:
+    if (time.time() - exp_start_time > 3600) and (args.notion != 20):
         print('Killing Exp Early')
         break
 
