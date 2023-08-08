@@ -675,7 +675,7 @@ class Objective():
             # copying Bardh's implementation
             kx = 0.7
             # kv = 1.6  # 1.8 good for N <=10  # 1.6 good for N=15,  #1.5 good for N=20
-            kv = 1.8 if self.N <= 10 else 1.6 if self.N == 15 else 1.5
+            kv = 1.8 if self.N < 10 else 1.6 if self.N in [10, 15] else 1.5
             # kx = 0.7
             # kv = ((self.H - t) / self.H) * 2.0
             u_refs = []

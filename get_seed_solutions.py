@@ -87,7 +87,7 @@ np.save(bc_obj_name, np.array(base_case_res))
 count_reach = 0
 for trial in range(trials):
     # SET INITIAL POSITIONS AND STATES
-    if N <= 10:
+    if N < 10:
         x = np.random.uniform(low=-15, high=0, size=1)[0]
         y = np.random.uniform(low=-15, high=15, size=1)[0]
     else:
