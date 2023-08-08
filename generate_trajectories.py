@@ -32,8 +32,12 @@ def generate_init_traj_quad(init_pos, goal_pos, H, Tf=1, input_limits=QUAD_INPUT
     # returns an array of shape (H, m), m state size, H = num_timesteps
 
     # Define the trajectory starting state:
-    pos0 = init_pos  #position
-    vel0 = [0, 0, 0] #velocity
+    if init_pos.size == 6:
+        pos0 = init_pos[0:3]  #position
+        vel0 = init_pos[3:6]  #velocity
+    else:
+        pos0 = init_pos  #position
+        vel0 = [0, 0, 0] #velocity
     acc0 = [0, 0, 0] #acceleration
 
     # Define the goal state:
