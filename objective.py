@@ -25,8 +25,19 @@ class Objective():
         self.Ubox = Ubox
         self.safe_dist = safe_dist
         self.dt = dt
+
+        self.heterogeneous = False
+        if self.heterogeneous:
+            self.rn = []
+            for r in range(N):
+                if r % 2 == 0: 
+                    self.rn.append(np.random.normal(0, 0.01))
+                else:
+                    self.rn.append(0)
+        else:
+            self.rn = [0 for r in range(N)]
         
-        self.solo_energies = [1 for i in range(self.N)]
+        self.solo_energies = [1 for i in range(N)]
         
         self.stop_diff = 0.05
         self.stop = [0 for i in range(self.N)]
@@ -682,6 +693,7 @@ class Objective():
             target_pos = []
             state_collect = []
             for r in range(self.N):
+                rn = self.rn[r]
                 leftright = 1 if r % 2 == 0 else -1
                 x_adj = 1 if r % 2 == 0 else 0
                 z_adj = 1 if (r % 3 == 0) and self.N >= 10 else 0
@@ -690,7 +702,7 @@ class Objective():
                 velocity_desired = - kx * ( robots[r].state[0:3] - (self.target['center'] + leftright*r*self.safe_dist*pos_adj) )
                 u_desired = - kv * ( robots[r].state[3:6] - velocity_desired )
                 u_refs.append(u_desired)
-                target = robots[r].state[0:3] + robots[r].state[3:6]*self.dt + 0.5*u_desired*self.dt**2
+                target = robots[r].state[0:3] + (rn + robots[r].state[3:6]*self.dt) + 0.5*u_desired*self.dt**2
                 target_pos.append(target)
             u_ref_t.value = np.array(u_refs).flatten()
 
