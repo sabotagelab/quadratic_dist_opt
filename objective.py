@@ -27,6 +27,7 @@ class Objective():
         self.dt = dt
 
         self.heterogeneous = False
+        self.with_penalty = True
         if self.heterogeneous:
             self.rn = []
             for r in range(N):
@@ -108,28 +109,24 @@ class Objective():
         solved_values = []
         local_sols = []
         for i in range(self.N):
+            # print('Agent {} tries to solve'.format(i))
             curr_agent_u = u.reshape((self.N, self.H, control_input_size))[i].flatten()
-            if self.notion == 0:  ## the basic fairness notion, uTQu + f1
-                # grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-                grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] + \
-                    self.beta * (grad_obstacle[i] * self.penalty(obst, grad=True) + grad_avoid[i] * self.penalty(avoid, grad=True))
+            if self.notion in [0, 3]:  ## the basic fairness notion, uTQu + f1 (or uTQu + surge fairness)
+                fairness_value = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i]
             elif self.notion == 1:  # no fairness, uTQu only
-                # grad = self.alpha * grad_quad[i] + - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-                grad = self.alpha * grad_quad[i] + \
-                    self.beta * (grad_obstacle[i] * self.penalty(obst, grad=True) + grad_avoid[i] * self.penalty(avoid, grad=True))
+                fairness_value = self.alpha * grad_quad[i]
             elif self.notion == 2:  # no fairness, no uTQu term
-                # grad = - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-                # grad = self.beta * (grad_obstacle[i] * self.penalty(obst, grad=True) + grad_avoid[i] * self.penalty(avoid, grad=True))
-                grad = self.beta * (grad_obstacle[i] * self.penalty(obst, grad=True) - grad_avoid[i])  # TODO: why penalty not working for avoid constraint?
-            elif self.notion == 3:  # surge fairness
-                # grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-                grad = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i] + \
-                    self.beta * (grad_obstacle[i] * self.penalty(obst, grad=True) + grad_avoid[i] * self.penalty(avoid, grad=True))
-            else:  # f1 or f2 only
-                # grad = self.alpha * grad_fairness[i] - self.beta * grad_obstacle[i] - self.beta * grad_avoid[i]
-                grad = self.alpha * grad_fairness[i] + \
-                    self.beta * (grad_obstacle[i] * self.penalty(obst, grad=True) + grad_avoid[i] * self.penalty(avoid, grad=True))
-            # print('grad with penalty', grad)
+                fairness_value = np.zeros(self.H*control_input_size)
+            else:  # f1 or f2 only  (ie self.notion in [4, 5])
+                fairness_value = np.ones(self.H*control_input_size) * self.alpha * grad_fairness[i]
+            
+            if self.with_penalty:
+                grad = fairness_value + \
+                    self.beta * (grad_obstacle[i] * self.penalty(obst, grad=True) + grad_avoid[i] * 2 * self.penalty(avoid, grad=True))
+                # print('grad with penalty', grad)
+            else:
+                grad = fairness_value - self.beta * grad_obstacle[i] - self.beta * 2 * grad_avoid[i]
+            # print(grad.shape)
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
             prev_eps_param = cp.Parameter(self.H * control_input_size, value=prev_eps[i])
 
@@ -191,7 +188,8 @@ class Objective():
                 ]
 
             prob = cp.Problem(objective, constraints)
-            prob.solve(verbose=False)
+            # prob.solve(verbose=False, solver='CVXOPT')
+            prob.solve(verbose=False, solver='ECOS')
             if prob.status == 'infeasible':
                 print('Agent {} Problem Status {}'.format(i, prob.status))
                 return [], []
@@ -227,38 +225,28 @@ class Objective():
     
     def central_obj(self, u):
         if self.notion == 0:  ## the basic fairness notion, uTQu + f1
-            return self.alpha * self.quad(u) + \
-                self.alpha * self.fairness(u) + \
-                self.beta * (self.penalty(self.obstacle(u)) + self.penalty(self.avoid_constraint(u)))
-                # self.beta * self.obstacle(u) - \
-                # self.beta * self.avoid_constraint(u)
+            fairness_value = self.alpha * self.quad(u) + self.alpha * self.fairness(u)
         elif self.notion == 1:  ## no fairness, uTQu only
-            return self.alpha * self.quad(u) + \
-                self.beta * (self.penalty(self.obstacle(u)) + self.penalty(self.avoid_constraint(u)))
-                # self.beta * self.obstacle(u) - \
-                # self.beta * self.avoid_constraint(u)
+            fairness_value = self.alpha * self.quad(u)
         elif self.notion in [2, 20]:  # no fairness, no uTQu term
-            # return 0
-            # return - self.beta * self.obstacle(u) - self.beta * self.avoid_constraint(u)
-            # return self.beta * (self.penalty(self.obstacle(u)) + self.penalty(self.avoid_constraint(u)))
-            # return self.beta * (self.penalty(self.obstacle(u)) )
-            return self.beta * (self.penalty(self.obstacle(u)) - self.avoid_constraint(u))  # TODO: why penalty not working for avoid constraint?
+            fairness_value = 0
         elif self.notion == 3:  # use surge fairness 
-            return self.alpha * self.quad(u) + \
-                self.alpha * self.surge_fairness(u) + \
-                self.beta * (self.penalty(self.obstacle(u)) + self.penalty(self.avoid_constraint(u)))
-                # self.beta * self.obstacle(u) - \
-                # self.beta * self.avoid_constraint(u)
+            fairness_value =  self.alpha * self.quad(u) + self.alpha * self.surge_fairness(u)
         elif self.notion == 4:  #f1 only
-            return self.alpha * self.fairness(u) + \
-                self.beta * (self.penalty(self.obstacle(u)) + self.penalty(self.avoid_constraint(u)))
-                # self.beta * self.obstacle(u) - \
-                # self.beta * self.avoid_constraint(u)
+            fairness_value = self.alpha * self.fairness(u)
         else:  # f2 only
-            return self.alpha * self.surge_fairness(u) + \
-                self.beta * (self.penalty(self.obstacle(u)) + self.penalty(self.avoid_constraint(u)))
-                # self.beta * self.obstacle(u) - \
-                # self.beta * self.avoid_constraint(u)
+            fairness_value = self.alpha * self.surge_fairness(u)
+
+        if self.with_penalty:
+            return fairness_value + \
+                self.beta * (self.penalty(self.obstacle(u)) + 2*self.penalty(self.avoid_constraint(u)))
+                
+        else:
+            # print(self.beta * self.obstacle(u))
+            # print(self.beta * self.avoid_constraint(u))
+            return fairness_value - \
+                self.beta * self.obstacle(u) - \
+                self.beta * 2*self.avoid_constraint(u)
 
             
     ##########################################################
@@ -306,36 +294,50 @@ class Objective():
         return -1 / self.gamma * np.log(logsum + EPS)  # small EPS in case all distances to obstacle is very far, causing logsum to go to 0
 
     def _obstacle_local(self, u, dyn='simple'):
+        g = np.array([
+            [0.5*self.dt**2, 0, 0],
+            [0, 0.5*self.dt**2, 0],
+            [0, 0, 0.5*self.dt**2],
+            [self.dt, 0, 0],
+            [0, self.dt, 0],
+            [0, 0, self.dt]])
+        
         control_input_size = self.control_input_size
         u_reshape = u.reshape((self.N, self.H, control_input_size))
         c = self.obstacles['center']
         r = self.obstacles['radius']
         
-        x = []
+        s = []
+        p = []
         logsum = EPS
         for i in range(self.N):
-            _, positions = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
+            states, positions = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
+            states = states[1:]
             positions = positions[1:]
             distances_to_obstacle = np.linalg.norm(positions - c, axis=1)
             logsum += np.sum(np.exp(-1 * self.gamma * (
                 distances_to_obstacle ** 2 - r**2
                 )))
-            
-            x.append(positions)
+            s.append(states)
+            p.append(positions)
 
-        x = np.array(x)
+        s = np.array(s)
+        p = np.array(p)
 
         partials = []
         for i in range(self.N):
-            positions = x[i]
+            states = s[i]
+            positions = p[i]
             distances_to_obstacle = np.linalg.norm(positions - c, axis=1)
             partial_smoothmin = np.sum(np.exp(-1 * self.gamma * (distances_to_obstacle ** 2 - r**2))) / (logsum + EPS)
-            if dyn == 'simple':
-                system_partial = 2 * np.ones_like(u_reshape[1])
-            else:
-                system_partial = 2 * self.dt * u_reshape[i]
-            p = np.multiply(partial_smoothmin * 2 * distances_to_obstacle, system_partial.T)
-            partials.append(p.flatten())
+            partial_loss = 2 * np.linalg.norm(np.dot(g.T, states.T))
+            # if dyn == 'simple':
+            #     system_partial = 2 * np.ones_like(u_reshape[1])
+            # else:
+            #     system_partial = 2 * self.dt * u_reshape[i]
+            # partial = np.multiply(partial_smoothmin * 2 * distances_to_obstacle, system_partial.T)
+            partial = np.multiply(partial_smoothmin, partial_loss)
+            partials.append(partial.flatten())
 
         return partials
         
@@ -358,7 +360,9 @@ class Objective():
         for i in range(self.N):
             _, positions_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
             positions_i = positions_i[1:]
-            for j in range(i, self.N):
+            for j in range(i+1, self.N):
+                if j == i:
+                    continue
                 _, positions_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
                 positions_j = positions_j[1:]
             
@@ -368,13 +372,23 @@ class Objective():
         return -1 / self.gamma * np.log(logsum + EPS)  # small EPS in case all distances to obstacle is very far, causing logsum to go to 0)
 
     def _avoid_local(self, u, dyn='simple'):
+        g = np.array([
+            [0.5*self.dt**2, 0, 0],
+            [0, 0.5*self.dt**2, 0],
+            [0, 0, 0.5*self.dt**2],
+            [self.dt, 0, 0],
+            [0, self.dt, 0],
+            [0, 0, self.dt]])
+        
         control_input_size = self.control_input_size
         u_reshape = u.reshape((self.N, self.H, control_input_size))
         
-        x = []
+        s = []
+        p = []
         logsum = EPS
         for i in range(self.N):
-            _, positions_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
+            states_i, positions_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
+            states_i = states_i[1:]
             positions_i = positions_i[1:]
             for j in range(i+1, self.N):
                 if j == i:
@@ -385,30 +399,35 @@ class Objective():
                 distances = np.linalg.norm(positions_i - positions_j, axis=1)
                 logsum += np.sum(np.exp(-1 * self.gamma * (distances ** 2 - self.safe_dist**2)))
             
-            x.append(positions_i)
+            s.append(states_i)
+            p.append(positions_i)
 
-        x = np.array(x)
+        s = np.array(s)
+        p = np.array(p)
 
         partials = []
         for i in range(self.N):
-            positions_i = x[i]
+            states_i = s[i]
+            positions_i = p[i]
 
             total_distances = 0
             for j in range(i+1, self.N):
                 if j == i:
                     continue
-                positions_j = x[j]
+                positions_j = p[j]
                 distances_to_obstacle = np.linalg.norm(positions_i - positions_j, axis=1)
                 total_distances += np.sum(distances_to_obstacle ** 2 - self.safe_dist**2)
             
             partial_smoothmin = np.exp(-1 * self.gamma * total_distances) / (logsum+EPS)
             
-            if dyn == 'simple':
-                system_partial = 2 * np.ones_like(u_reshape[1])
-            else:
-                system_partial = 2 * self.dt * u_reshape[i]
-            p = np.multiply(partial_smoothmin * 2 * distances_to_obstacle, system_partial.T)
-            partials.append(p.flatten())
+            # if dyn == 'simple':
+            #     system_partial = 2 * np.ones_like(u_reshape[1])
+            # else:
+            #     system_partial = 2 * self.dt * u_reshape[i]
+            # partial = np.multiply(partial_smoothmin * 2 * distances_to_obstacle, system_partial.T)
+            partial_loss = 2 * np.linalg.norm(np.dot(g.T, states_i.T))
+            partial = np.multiply(partial_smoothmin, partial_loss)
+            partials.append(partial.flatten())
 
         return partials
     
@@ -777,13 +796,13 @@ class Objective():
     ###########################################################
 
     def penalty(self, x, grad=False):
-        alpha = 10.
+        alpha = 1.
         if grad:
-            # grad p(x) = [exp(-ax)(ax + e^ax + 1)]/x^2
-            return -1 * np.exp(-alpha*x)*(alpha*x + np.exp(alpha*x) + 1)/x**2
+            # grad p(x) = exp(ax)/(e^ax + 1)
+            return np.exp(alpha*x)/(np.exp(alpha*x) + 1)
         
         # p(x) = 1/smoothmax(0, x)
-        # smoothmax(x1, ..., xn) = sum(xi * e^axi) / sum(e^axi)
-        smax = [(x) * np.exp(alpha*x)] / (np.exp(alpha*x) + 1)
+        # smoothmax(x1, ..., xn) = 1/a ln (e^ax1 + ... + e^axn)
+        smax =  1/alpha * np.log(np.exp(alpha*x) + 1)
         return 1/smax
         
