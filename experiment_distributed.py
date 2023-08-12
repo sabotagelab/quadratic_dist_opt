@@ -1,15 +1,18 @@
 import argparse
+from csv import writer
 from datetime import datetime
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.art3d as art3d
 import numpy as np
+import os
+from skspatial.objects import Sphere
+import sys
+import time
 
 from objective import Objective
 from generate_trajectories import Quadrocopter
 from generate_trajectories import generate_agent_states, generate_init_traj_quad
-import sys
-from csv import writer
-import time
+
 
 
 EPS = 1e-2
@@ -37,6 +40,7 @@ parser.add_argument('--co', type=float, default=3)
 parser.add_argument('--rg', type=float, default=3)
 parser.add_argument('--cg', type=float, default=5)
 parser.add_argument('--Ubox', type=float, default=100)
+parser.add_argument('--sd', type=float, default=0.1)
 parser.add_argument('--iter', type=int, default=1000)
 parser.add_argument('--Tf', type=int, default=1)
 
@@ -63,53 +67,67 @@ H = args.H
 
 Tf = args.Tf
 
+dt = Tf/H*1.5
+
 trials = args.trials
 
+# READ CSV FOR SEED SOLUTONS STATs
+for filename in os.listdir('seed_results'):
+    if ".csv" not in filename:
+        continue
+    if 'N{}_H{}_'.format(N, H) not in filename:
+        continue
+    f = os.path.join('seed_results', filename)
+    if os.path.isfile(f):
+        break
+seed_stats = np.loadtxt('seed_results/{}'.format(filename), skiprows=1, delimiter=',')
+seed_save_time = filename.split('N{}_H{}_'.format(N, H))[1].split('.csv')[0]
+seed_inputs_filename = 'seed_results/control_inputs_N{}_H{}_{}.npy'.format(N, H, seed_save_time)
+
 # CREATE CSV TO SAVE RESULTS
-csv_cols = ['trial_num', 'success', 'obj', 'energy', 'f1', 'f4', 'obstacle', 'collision', 'walltime', 'cputime']
-csv_name = 'test_results/distributed_{}_N{}_H{}_{}.csv'.format(results_file, N, H, datetime.now())
+csv_cols = ['trial_num', 'success', 'obj', 'energy', 'f1', 'f4', 'obstacle', 'collision', 'walltime', 'cputime', 'converge_iter']
+save_time = datetime.now()
+csv_name = 'test_results/distributed_{}_N{}_H{}_{}.csv'.format(args.notion, N, H, save_time)
+u_obj_name = 'test_results/control_inputs_distributed_{}_N{}_H{}_{}.npy'.format(args.notion, N, H, save_time)
 file_obj = open(csv_name, 'a')
 writer_obj = writer(file_obj)
 writer_obj.writerow(csv_cols)
 
+u_res = []
+np.save(u_obj_name, np.array(u_res))
+
+print('Num Trials', seed_stats.shape[0])
 exp_start_time = time.time()
-for trial in range(trials):
-    if (trial % 10) == 0:
-        # SET INITIAL POSITIONS AND STATES
-        x = np.random.uniform(low=-15, high=0, size=1)[0]
-        y = np.random.uniform(low=-15, high=15, size=1)[0]
+for trial in range(seed_stats.shape[0]):
+    # if seed_stats[trial, 1] == 1:
+    seed_solution = np.load(seed_inputs_filename)[trial]
+    
+    # SET INITIAL POSITIONS AND STATES
+    init_pos = seed_solution[0:N*3].reshape((N, 3))
+    init_states = []
+    for i in range(N):
+        s = [init_pos[i]]
+        s.append(np.array([0, 0, 0]))  # velo
+        init_states.append(np.array(s).flatten())
 
-        init_pos = []
-        init_states = []
-        for i in range(N):
-            init_pos.append(np.array([x+(i), y, 0]))
-            s = [init_pos[i]]
-            s.append(np.array([0, 0, 0]))  # velo
-            init_states.append(np.array(s).flatten())
+    # SET INITIAL CONTROL INPUTS
+    init_u = seed_solution[N*3:].reshape((N, H, 3))
 
-        # GENERATE INITIAL "CONTROL INPUTS" AND TRAJECTORIES
-        init_u = []
-        init_traj = []
-        for i in range(N):
-            traj_pos, traj_accel = generate_init_traj_quad(init_pos[i], cg, H, Tf=Tf)
-            init_u.append(traj_accel)
-            init_traj.append(traj_pos)
-        init_u = np.array(init_u)
-
-        # GENERATE SOLO ENERGIES
-        system_model = Quadrocopter
-        control_input_size = 3
-        system_model_config = (Quadrocopter, control_input_size)
-        solo_energies = []
-        for i in range(N):
-            n = 1*H*control_input_size
-            Q = np.eye(n)
-            obj = Objective(1, H, system_model_config, [init_states[i]], [init_pos[i]], obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=Tf/H*1.5, notion=args.notion)
-            final_obj, final_u = obj.solve_central(init_u[i], steps=args.iter)
-            init_solo_energy = obj.quad(final_u.flatten())
-            solo_energies.append(init_solo_energy)
+    # SET SOLO ENERGIES
+    solo_us = []
+    solo_energies = []
+    for i in range(N):
+        _, traj_accel = generate_init_traj_quad(init_pos[i], cg, H, Tf=Tf)
+        solo_us.append(traj_accel)
+    solo_us = np.array(solo_us)
+    for i in range(N):
+        solo_energies.append(np.linalg.norm(solo_us[i])**2)
 
     # INIT SOLVER
+    system_model = Quadrocopter
+    control_input_size = 3
+    system_model_config = (Quadrocopter, control_input_size)
+
     n = N*H*control_input_size
     # Q = np.eye(n)
     Q = np.random.randn(n, n)   # variable for quadratic objective
@@ -117,23 +135,11 @@ for trial in range(trials):
     obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=Tf/H*1.5, notion=args.notion)
     obj.solo_energies = solo_energies
 
-    # SOLVE FIRST USING CENTRAL BUT NO FAIRNESS ADDED, ONLY REACH AVOID FUNCTION
-    central_obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=Tf/H*1.5, notion=2)
-    central_obj.solo_energies = solo_energies
-    basic_obj, basic_u = obj.solve_central(init_u, steps=args.iter)
-
-    basic_success = 0 if len(basic_u) == 0 else 1
-    if basic_success == 0:
-        print('Unable to make basic solution work, not trying to make basic solution fair')
-        continue
-
     # SOLVE USING DISTRIBUTED
     st = time.time()
     stp = time.process_time()
     try:
-        # final_u, local_sols, fairness, converge_iter = obj.solve_distributed(init_u, steps=args.iter, dyn='quad')
-        basic_u = basic_u.reshape((N, H, control_input_size))
-        final_u, local_sols, fairness, converge_iter = obj.solve_distributed(basic_u, steps=args.iter, dyn='quad')
+        final_u, local_sols, fairness, converge_iter = obj.solve_distributed(init_u, steps=args.iter, dyn='quad')
         success = 0 if len(fairness) == 0 else 1
     except BaseException as e:
         print(e)
@@ -148,12 +154,24 @@ for trial in range(trials):
     # Save Results to File
     if success == 1:
         valid_sol = obj.check_avoid_constraints(final_u)
-        dist_sol_obj = final_obj
+        dist_sol_obj = obj.central_obj(final_u.flatten())
         dist_sol_energy = obj.quad(final_u.flatten())
         dist_sol_fairness1 = obj.fairness(final_u.flatten())
         dist_sol_fairness4 = obj.surge_fairness(final_u.flatten())
         dist_sol_obstacle = obj.obstacle(final_u.flatten())
         dist_sol_collision = obj.avoid_constraint(final_u.flatten())
+
+        # Save Final Solution To File For use in Distributed Experiment
+        u_res = np.load(u_obj_name)
+        init_pos_and_final_u = np.append(np.array(init_pos).flatten(), final_u.flatten())
+        if u_res.size == 0:
+            np.save(u_obj_name, init_pos_and_final_u.reshape((1, (3*N)+n)))
+            del u_res
+        else:    
+            base_case_res = np.append(u_res, init_pos_and_final_u.reshape((1, (3*N)+n)), axis=0)
+            np.save(u_obj_name, u_res)
+            del u_res
+
     else: 
         valid_sol = False
         dist_sol_obj = 0
@@ -169,8 +187,8 @@ for trial in range(trials):
 
     writer_obj.writerow(res)
 
-    if time.time() - exp_start_time > 3600:
-        print('Killing Exp Early')
-        break
+    # if time.time() - exp_start_time > 3600:
+    #     print('Killing Exp Early')
+    #     break
 
 file_obj.close()

@@ -219,7 +219,7 @@ class Objective():
             return np.inf, []
         final_u = res.x
         final_obj = res.fun
-        print(final_obj)
+        # print(final_obj)
 
         return final_obj, final_u
     

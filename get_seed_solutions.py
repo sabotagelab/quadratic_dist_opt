@@ -62,7 +62,7 @@ obstacles = {'center': co, 'radius': ro}
 target = {'center': cg, 'radius': rg}
 Ubox = args.Ubox  # box constraint
 safe_dist = args.sd
-notion = args.notion
+notion = 2  # NOTION SHOULD ALWAYS BE 2
 
 H = args.H
 
@@ -75,14 +75,15 @@ trials = args.trials
 # CREATE CSV TO SAVE RESULTS
 # csv_cols = ['trial_num', 'success', 'obj', 'energy', 'f1', 'f4', 'obstacle', 'collision', 'walltime', 'cputime']
 csv_cols = ['trial_num', 'success', 'energy', 'f1', 'f4', 'obstacle', 'collision', 'walltime', 'cputime']
-csv_name = 'seed_results/N{}_H{}_{}.csv'.format(N, H, datetime.now())
-bc_obj_name = 'seed_results/control_inputs_N{}_H{}_{}.npy'.format(N, H, datetime.now())
-# file_obj = open(csv_name, 'a')
-# writer_obj = writer(file_obj)
-# writer_obj.writerow(csv_cols)
+save_time = datetime.now()
+csv_name = 'seed_results/N{}_H{}_{}.csv'.format(N, H, save_time)
+bc_obj_name = 'seed_results/control_inputs_N{}_H{}_{}.npy'.format(N, H, save_time)
+file_obj = open(csv_name, 'a')
+writer_obj = writer(file_obj)
+writer_obj.writerow(csv_cols)
 
 base_case_res = []
-# np.save(bc_obj_name, np.array(base_case_res))
+np.save(bc_obj_name, np.array(base_case_res))
 
 count_reach = 0
 for trial in range(trials):
@@ -118,7 +119,6 @@ for trial in range(trials):
     for i in range(N):
         solo_energies.append(np.linalg.norm(init_u[i])**2)
 
-
     # INIT SOLVER
     system_model = Quadrocopter
     control_input_size = 3
@@ -148,7 +148,7 @@ for trial in range(trials):
 
     # Save Results to File
     if obj.check_avoid_constraints(seed_u): #and obj.reach_constraint(seed_u):
-        valid_sol = True
+        valid_sol = int(obj.reach_constraint(seed_u) <= 0)
         central_sol_energy = obj.quad(seed_u.flatten())
         central_sol_fairness1 = obj.fairness(seed_u.flatten())  # f1
         central_sol_fairness4 = obj.surge_fairness(seed_u.flatten())  # f4
@@ -157,20 +157,20 @@ for trial in range(trials):
         count_reach += 1
 
         # Save Final Solution To File For use in Distributed Experiment
-        # base_case_res = np.load(bc_obj_name)
-        # init_pos_and_final_u = np.append(np.array(init_pos).flatten(), seed_u.flatten())
-        # if base_case_res.size == 0:
-        #     np.save(bc_obj_name, init_pos_and_final_u.reshape((1, (3*N)+n)))
-        #     del base_case_res
-        # else:    
-        #     base_case_res = np.append(base_case_res, init_pos_and_final_u.reshape((1, (3*N)+n)), axis=0)
-        #     np.save(bc_obj_name, base_case_res)
-        #     del base_case_res
+        base_case_res = np.load(bc_obj_name)
+        init_pos_and_final_u = np.append(np.array(init_pos).flatten(), seed_u.flatten())
+        if base_case_res.size == 0:
+            np.save(bc_obj_name, init_pos_and_final_u.reshape((1, (3*N)+n)))
+            del base_case_res
+        else:    
+            base_case_res = np.append(base_case_res, init_pos_and_final_u.reshape((1, (3*N)+n)), axis=0)
+            np.save(bc_obj_name, base_case_res)
+            del base_case_res
 
-        # res = [trial, valid_sol, central_sol_energy, central_sol_fairness1, central_sol_fairness4, central_sol_obstacle, central_sol_collision, walltime, cputime]
-        # writer_obj.writerow(res)
+        res = [trial, valid_sol, central_sol_energy, central_sol_fairness1, central_sol_fairness4, central_sol_obstacle, central_sol_collision, walltime, cputime]
+        writer_obj.writerow(res)
     else: 
-        valid_sol = False
+        valid_sol = 0
         central_sol_energy = 0
         central_sol_fairness1 = 0
         central_sol_fairness4 = 0
@@ -180,51 +180,51 @@ for trial in range(trials):
     # print('Trial {} Result: {}'.format(trial, valid_sol))
 
     # PLOT TRAEJECTORIES FROM SEEDED SOLUTION
-    final_trajectories = []
-    fig = plt.figure()
-    ax = fig.add_subplot(projection='3d')
-    times = np.linspace(0, Tf, H)
-    for i in range(N):
-        _, traj = generate_agent_states(seed_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=dt)
-        ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
-        ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
-        final_trajectories.append(traj)
-    obs_sphere = Sphere([co[0], co[1], co[2]], ro)
-    obs_sphere.plot_3d(ax, alpha=0.2, color='red')
-    goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
-    goal_sphere.plot_3d(ax, alpha=0.2, color='green')
-    plt.show()
+    # final_trajectories = []
+    # fig = plt.figure()
+    # ax = fig.add_subplot(projection='3d')
+    # times = np.linspace(0, Tf, H)
+    # for i in range(N):
+    #     _, traj = generate_agent_states(seed_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=dt)
+    #     ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
+    #     ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
+    #     final_trajectories.append(traj)
+    # obs_sphere = Sphere([co[0], co[1], co[2]], ro)
+    # obs_sphere.plot_3d(ax, alpha=0.2, color='red')
+    # goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
+    # goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+    # plt.show()
 
 
-    obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=dt, notion=notion)
-    obj.solo_energies = solo_energies
-    # TEST OBSTACLE LOCAL
-    # PARTIALS  = obj._obstacle_local(seed_u, dyn='quad')
-    # PARTIALS  = obj._avoid_local(seed_u, dyn='quad')
-    # print(PARTIALS)
+    # obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=dt, notion=notion)
+    # obj.solo_energies = solo_energies
+    # # TEST OBSTACLE LOCAL
+    # # PARTIALS  = obj._obstacle_local(seed_u, dyn='quad')
+    # # PARTIALS  = obj._avoid_local(seed_u, dyn='quad')
+    # # print(PARTIALS)
     # final_u, local_sols, fairness, converge_iter = obj.solve_distributed(seed_u, steps=args.iter, dyn='quad')
-    final_obj, final_u = obj.solve_central(seed_u, steps=args.iter)
-    success = 0 if len(final_u) == 0 else 1
-    if success == 1:
-        final_u = final_u.reshape(N, H, control_input_size)
-        print(obj.check_avoid_constraints(final_u))
-        print(obj.reach_constraint(final_u))
+    # # final_obj, final_u = obj.solve_central(seed_u, steps=args.iter)
+    # success = 0 if len(final_u) == 0 else 1
+    # if success == 1:
+    #     final_u = final_u.reshape(N, H, control_input_size)
+    #     print(obj.check_avoid_constraints(final_u))
+    #     print(obj.reach_constraint(final_u))
 
-        # PLOT FINAL TRAEJECTORIES FROM CONTROL INPUTS
-        final_trajectories = []
-        fig = plt.figure()
-        ax = fig.add_subplot(projection='3d')
-        times = np.linspace(0, Tf, H)
-        for i in range(N):
-            _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=dt)
-            ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
-            # ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
-            # ax.scatter(traj[5,0], traj[5,1], traj[5,2], label=i)
-            final_trajectories.append(traj)
-        obs_sphere = Sphere([co[0], co[1], co[2]], ro)
-        obs_sphere.plot_3d(ax, alpha=0.2, color='red')
-        goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
-        goal_sphere.plot_3d(ax, alpha=0.2, color='green')
-        plt.show()
+    #     # PLOT FINAL TRAEJECTORIES FROM CONTROL INPUTS
+    #     final_trajectories = []
+    #     fig = plt.figure()
+    #     ax = fig.add_subplot(projection='3d')
+    #     times = np.linspace(0, Tf, H)
+    #     for i in range(N):
+    #         _, traj = generate_agent_states(final_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=dt)
+    #         ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
+    #         # ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
+    #         # ax.scatter(traj[5,0], traj[5,1], traj[5,2], label=i)
+    #         final_trajectories.append(traj)
+    #     obs_sphere = Sphere([co[0], co[1], co[2]], ro)
+    #     obs_sphere.plot_3d(ax, alpha=0.2, color='red')
+    #     goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
+    #     goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+    #     plt.show()
 
 print('reach goal', count_reach)
