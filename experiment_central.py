@@ -168,12 +168,12 @@ for trial in range(seed_stats.shape[0]):
 
     else: 
         valid_sol = False
-        dist_sol_obj = 0
-        dist_sol_energy = 0
-        dist_sol_fairness1 = 0
-        dist_sol_fairness4 = 0
-        dist_sol_obstacle = 0
-        dist_sol_collision = 0
+        central_sol_obj = 0
+        central_sol_energy = 0
+        central_sol_fairness1 = 0
+        central_sol_fairness4 = 0
+        central_sol_obstacle = 0
+        central_sol_collision = 0
 
     print('Trial {} Result: {}'.format(trial, valid_sol))
 
