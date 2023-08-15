@@ -4,6 +4,8 @@ from scipy.optimize import Bounds, basinhopping, minimize, NonlinearConstraint
 from generate_trajectories import generate_agent_states, generate_init_traj_quad
 
 EPS = 1e-8
+CP_SOLVER='ECOS'
+SCIPY_SOLVER='SLSQP' #'L-BFGS-B' #
 
 class Objective():
     def __init__(self, N, H, system_model_config, init_states, init_pos, obstacles, target,\
@@ -189,7 +191,7 @@ class Objective():
 
             prob = cp.Problem(objective, constraints)
             # prob.solve(verbose=False, solver='CVXOPT')
-            prob.solve(verbose=False, solver='ECOS')
+            prob.solve(verbose=False, solver=CP_SOLVER)
             if prob.status == 'infeasible':
                 print('Agent {} Problem Status {}'.format(i, prob.status))
                 return [], []
@@ -213,7 +215,7 @@ class Objective():
         
         res = minimize(func, x0, bounds=Bounds(lb=-self.Ubox, ub=self.Ubox), 
                        constraints=constraints,
-                       options={'maxiter':steps})
+                       options={'maxiter':steps}, method=SCIPY_SOLVER)
         if not res.success:
             print(res.message)
             return np.inf, []
@@ -234,7 +236,7 @@ class Objective():
             fairness_value =  self.alpha * self.quad(u) + self.alpha * self.surge_fairness(u)
         elif self.notion == 4:  #f1 only
             fairness_value = self.alpha * self.fairness(u)
-        else:  # f2 only
+        else:  # f2 only)
             fairness_value = self.alpha * self.surge_fairness(u)
 
         if self.with_penalty:
@@ -777,7 +779,7 @@ class Objective():
                 constraints.append(Lfh2 + Lgh2_u + h_min >= 0) 
 
             cbf_controller = cp.Problem(objective, constraints)
-            cbf_controller.solve()
+            cbf_controller.solve(solver=CP_SOLVER)
 
             if cbf_controller.status == 'infeasible':
                 print(f"QP infeasible")
@@ -804,5 +806,5 @@ class Objective():
         # p(x) = 1/smoothmax(0, x)
         # smoothmax(x1, ..., xn) = 1/a ln (e^ax1 + ... + e^axn)
         smax =  1/alpha * np.log(np.exp(alpha*x) + 1)
-        return 1/smax
+        return 1/(smax + EPS)
         

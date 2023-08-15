@@ -136,7 +136,8 @@ for trial in range(trials):
         seed_u = obj.solve_nbf()
         seed_u = np.array(seed_u)  # H, N, control_input    
         seed_u = seed_u.transpose(1, 0, 2)  # N, H, control_input
-    except:
+    except Exception as e:
+        print(e)
         print('error solving, continue')
         continue
     etp = time.process_time()
@@ -179,7 +180,7 @@ for trial in range(trials):
 
     # print('Trial {} Result: {}'.format(trial, valid_sol))
 
-    # PLOT TRAEJECTORIES FROM SEEDED SOLUTION
+    # # PLOT TRAEJECTORIES FROM SEEDED SOLUTION
     # final_trajectories = []
     # fig = plt.figure()
     # ax = fig.add_subplot(projection='3d')
@@ -202,8 +203,8 @@ for trial in range(trials):
     # # PARTIALS  = obj._obstacle_local(seed_u, dyn='quad')
     # # PARTIALS  = obj._avoid_local(seed_u, dyn='quad')
     # # print(PARTIALS)
-    # final_u, local_sols, fairness, converge_iter = obj.solve_distributed(seed_u, steps=args.iter, dyn='quad')
-    # # final_obj, final_u = obj.solve_central(seed_u, steps=args.iter)
+    # # final_u, local_sols, fairness, converge_iter = obj.solve_distributed(seed_u, steps=args.iter, dyn='quad')
+    # final_obj, final_u = obj.solve_central(seed_u, steps=args.iter)
     # success = 0 if len(final_u) == 0 else 1
     # if success == 1:
     #     final_u = final_u.reshape(N, H, control_input_size)
