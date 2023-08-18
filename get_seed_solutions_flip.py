@@ -84,7 +84,7 @@ seed_writer_obj = writer(seed_file_obj)
 seed_writer_obj.writerow(csv_cols)
 
 base_case_res = []
-# np.save(bc_obj_name, np.array(base_case_res))
+np.save(bc_obj_name, np.array(base_case_res))
 
 # SAVE FINAL SOLUTIONS
 # u_csv_name = 'test_results/central_{}_N{}_H{}_{}.csv'.format(args.notion, N, H, save_time)
