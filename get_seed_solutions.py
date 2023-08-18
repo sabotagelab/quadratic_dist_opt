@@ -78,12 +78,12 @@ csv_cols = ['trial_num', 'success', 'energy', 'f1', 'f4', 'obstacle', 'collision
 save_time = datetime.now()
 csv_name = 'seed_results/N{}_H{}_{}.csv'.format(N, H, save_time)
 bc_obj_name = 'seed_results/control_inputs_N{}_H{}_{}.npy'.format(N, H, save_time)
-file_obj = open(csv_name, 'a')
-writer_obj = writer(file_obj)
-writer_obj.writerow(csv_cols)
+# file_obj = open(csv_name, 'a')
+# writer_obj = writer(file_obj)
+# writer_obj.writerow(csv_cols)
 
 base_case_res = []
-np.save(bc_obj_name, np.array(base_case_res))
+# np.save(bc_obj_name, np.array(base_case_res))
 
 count_reach = 0
 for trial in range(trials):
@@ -158,18 +158,18 @@ for trial in range(trials):
         count_reach += 1
 
         # Save Final Solution To File For use in Distributed Experiment
-        base_case_res = np.load(bc_obj_name)
-        init_pos_and_final_u = np.append(np.array(init_pos).flatten(), seed_u.flatten())
-        if base_case_res.size == 0:
-            np.save(bc_obj_name, init_pos_and_final_u.reshape((1, (3*N)+n)))
-            del base_case_res
-        else:    
-            base_case_res = np.append(base_case_res, init_pos_and_final_u.reshape((1, (3*N)+n)), axis=0)
-            np.save(bc_obj_name, base_case_res)
-            del base_case_res
+        # base_case_res = np.load(bc_obj_name)
+        # init_pos_and_final_u = np.append(np.array(init_pos).flatten(), seed_u.flatten())
+        # if base_case_res.size == 0:
+        #     np.save(bc_obj_name, init_pos_and_final_u.reshape((1, (3*N)+n)))
+        #     del base_case_res
+        # else:    
+        #     base_case_res = np.append(base_case_res, init_pos_and_final_u.reshape((1, (3*N)+n)), axis=0)
+        #     np.save(bc_obj_name, base_case_res)
+        #     del base_case_res
 
-        res = [trial, valid_sol, central_sol_energy, central_sol_fairness1, central_sol_fairness4, central_sol_obstacle, central_sol_collision, walltime, cputime]
-        writer_obj.writerow(res)
+        # res = [trial, valid_sol, central_sol_energy, central_sol_fairness1, central_sol_fairness4, central_sol_obstacle, central_sol_collision, walltime, cputime]
+        # writer_obj.writerow(res)
     else: 
         valid_sol = 0
         central_sol_energy = 0

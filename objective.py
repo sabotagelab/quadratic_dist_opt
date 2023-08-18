@@ -30,6 +30,7 @@ class Objective():
 
         self.heterogeneous = False
         self.with_penalty = True
+        self.with_safety = False
         if self.heterogeneous:
             self.rn = []
             for r in range(N):
@@ -103,10 +104,11 @@ class Objective():
             grad_fairness = self.surge_fairness(u, grad=True)
         else:
             grad_fairness = self.fairness(u, grad=True)
-        grad_obstacle = self.obstacle(u, grad=True, dyn=dyn)
-        obst = self.obstacle(u, dyn=dyn)
-        grad_avoid = self.avoid_constraint(u, grad=True, dyn=dyn)
-        avoid = self.avoid_constraint(u, dyn=dyn)
+        if self.with_safety:
+            grad_obstacle = self.obstacle(u, grad=True, dyn=dyn)
+            obst = self.obstacle(u, dyn=dyn)
+            grad_avoid = self.avoid_constraint(u, grad=True, dyn=dyn)
+            avoid = self.avoid_constraint(u, dyn=dyn)
 
         solved_values = []
         local_sols = []
@@ -122,12 +124,15 @@ class Objective():
             else:  # f1 or f2 only  (ie self.notion in [4, 5])
                 fairness_value = np.ones(self.H*control_input_size) * self.alpha * grad_fairness[i]
             
-            if self.with_penalty:
-                grad = fairness_value + \
-                    self.beta * (grad_obstacle[i] * self.penalty(obst, grad=True) + grad_avoid[i] * 2 * self.penalty(avoid, grad=True))
-                # print('grad with penalty', grad)
+            if self.with_safety:
+                if self.with_penalty:
+                    grad = fairness_value + \
+                        self.beta * (grad_obstacle[i] * self.penalty(obst, grad=True) + grad_avoid[i] * 2 * self.penalty(avoid, grad=True))
+                    # print('grad with penalty', grad)
+                else:
+                    grad = fairness_value - self.beta * grad_obstacle[i] - self.beta * 2 * grad_avoid[i]
             else:
-                grad = fairness_value - self.beta * grad_obstacle[i] - self.beta * 2 * grad_avoid[i]
+                grad = fairness_value
             # print(grad.shape)
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
             prev_eps_param = cp.Parameter(self.H * control_input_size, value=prev_eps[i])
@@ -190,10 +195,11 @@ class Objective():
                 ]
 
             prob = cp.Problem(objective, constraints)
-            # prob.solve(verbose=False, solver='CVXOPT')
             prob.solve(verbose=False, solver=CP_SOLVER)
             if prob.status == 'infeasible':
-                print('Agent {} Problem Status {}'.format(i, prob.status))
+                # print(grad)
+                # prob.solve(verbose=True, solver=CP_SOLVER)
+                # print('Agent {} Problem Status {}'.format(i, prob.status))
                 return [], []
             solved_values.append(eps.value)
             local_sols.append(prob.value)
@@ -217,7 +223,7 @@ class Objective():
                        constraints=constraints,
                        options={'maxiter':steps}, method=SCIPY_SOLVER)
         if not res.success:
-            print(res.message)
+            # print(res.message)
             return np.inf, []
         final_u = res.x
         final_obj = res.fun
@@ -239,16 +245,18 @@ class Objective():
         else:  # f2 only)
             fairness_value = self.alpha * self.surge_fairness(u)
 
-        if self.with_penalty:
-            return fairness_value + \
-                self.beta * (self.penalty(self.obstacle(u)) + 2*self.penalty(self.avoid_constraint(u)))
-                
+        if self.with_safety:
+            if self.with_penalty:
+                return fairness_value + \
+                    self.beta * (self.penalty(self.obstacle(u)) + 2*self.penalty(self.avoid_constraint(u)))
+            else:
+                # print(self.beta * self.obstacle(u))
+                # print(self.beta * self.avoid_constraint(u))
+                return fairness_value - \
+                    self.beta * self.obstacle(u) - \
+                    self.beta * 2*self.avoid_constraint(u)
         else:
-            # print(self.beta * self.obstacle(u))
-            # print(self.beta * self.avoid_constraint(u))
-            return fairness_value - \
-                self.beta * self.obstacle(u) - \
-                self.beta * 2*self.avoid_constraint(u)
+            return fairness_value
 
             
     ##########################################################
@@ -606,7 +614,7 @@ class Objective():
     # Check that Mission Successful after Solving
     ###########################################################
 
-    def check_avoid_constraints(self, u):
+    def check_avoid_constraints(self, u, avoid_only=False):
         control_input_size = self.control_input_size
         u_reshape = u.reshape((self.N, self.H, control_input_size))
 
@@ -621,13 +629,14 @@ class Objective():
             positions = positions[1:]
             distances_to_obstacle = np.linalg.norm(positions - c, axis=1)
             if any(distances_to_obstacle < r):
-                print('hit obstacle')
+                # print('hit obstacle')
                 return False
-            distance_to_target = np.linalg.norm(final_p - cg) - 0.001
-            if distance_to_target > rg:
-                print('doesnt reach')
-                print(i, distance_to_target)
-                return False
+            if not avoid_only:
+                distance_to_target = np.linalg.norm(final_p - cg)
+                if distance_to_target > rg:
+                    # print('doesnt reach')
+                    # print(i, distance_to_target)
+                    return False
 
         # Check Collision Avoidance
         for i in range(self.N):
@@ -638,8 +647,8 @@ class Objective():
                 positions_j = positions_j[1:]
                 distances_to_obstacle = np.linalg.norm(positions_i - positions_j, axis=1)
                 if any(distances_to_obstacle < self.safe_dist):
-                    print('collision')
-                    print(distances_to_obstacle)
+                    # print('collision')
+                    # print(distances_to_obstacle)
                     return False
 
         return True
@@ -649,7 +658,7 @@ class Objective():
     # Seed Solution (Obstacle Avoidance and Mutual Separation Only)
     ###########################################################
 
-    def solve_nbf(self):
+    def solve_nbf(self, seed_u=None):
         # Centrally Solve for Obstacle Avoidance
         f = np.array([
             [1, 0, 0, self.dt, 0, 0],
@@ -685,11 +694,17 @@ class Objective():
                     g_diag_list.append(np.zeros_like(g))
             g_diag.append(g_diag_list)
         g_diag = np.block(g_diag)
+        # copying Bardh's implementation # TODO: REVISE CHOICES FOR kx and kv to better ensure reach
+        kx = 0.7
+        kv = 1.8 if self.N < 10 else 1.6 if self.N in [10, 15] else 1.5
+        # kv = 1.8
         c = self.obstacles['center']
         r = self.obstacles['radius']
 
         u_t = cp.Variable(self.N*self.control_input_size)
         u_ref_t = cp.Parameter((self.N*self.control_input_size), 
+                               value=np.zeros(self.N*self.control_input_size))
+        u_fair_t = cp.Parameter((self.N*self.control_input_size), 
                                value=np.zeros(self.N*self.control_input_size))
         # w = cp.Variable(1)
         # Create Quad systems for each 
@@ -698,18 +713,14 @@ class Objective():
             rob = self.system_model(self.init_states[r])
             robots.append(rob)
 
-        objective = cp.Minimize(cp.sum_squares(u_t - u_ref_t)) #+ w)
-        # objective = cp.Minimize(w)
+        if seed_u is not None:
+            # objective = cp.Minimize(0.95*cp.sum_squares(u_t - u_ref_t) + 0.05*cp.sum_squares(u_t - u_fair_t))
+            objective = cp.Minimize(cp.sum_squares(u_t - u_ref_t) + 0.05*cp.sum_squares(u_t - u_fair_t))
+        else:
+            objective = cp.Minimize(cp.sum_squares(u_t - u_ref_t))
         final_u = []
-        # agent_us = [[] for i in range(self.N)]
         for t in range(self.H):
-            # print('Timestep', t)
-            # copying Bardh's implementation
-            kx = 0.7
-            # kv = 1.6  # 1.8 good for N <=10  # 1.6 good for N=15,  #1.5 good for N=20
-            kv = 1.8 if self.N < 10 else 1.6 if self.N in [10, 15] else 1.5
-            # kx = 0.7
-            # kv = ((self.H - t) / self.H) * 2.0
+            u_refs_fair = []
             u_refs = []
             target_pos = []
             state_collect = []
@@ -725,10 +736,13 @@ class Objective():
                 u_refs.append(u_desired)
                 target = robots[r].state[0:3] + (rn + robots[r].state[3:6]*self.dt) + 0.5*u_desired*self.dt**2
                 target_pos.append(target)
+                if seed_u is not None:
+                    u_refs_fair.append(seed_u[r, t, :])
             u_ref_t.value = np.array(u_refs).flatten()
+            u_fair_t.value = np.array(u_refs_fair).flatten()
 
-
-            constraints = [u_t <= self.Ubox, -self.Ubox <= u_t]
+            # constraints = [u_t <= self.Ubox, -self.Ubox <= u_t]
+            constraints = []
             
             # NBFs
             h_c_min = 9999
@@ -782,7 +796,7 @@ class Objective():
             cbf_controller.solve(solver=CP_SOLVER)
 
             if cbf_controller.status == 'infeasible':
-                print(f"QP infeasible")
+                # print(f"QP infeasible")
                 # print(cbf_controller)
                 return []
             
