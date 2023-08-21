@@ -142,20 +142,20 @@ for trial in range(trials):
     # print(init_u.shape)
 
     # PLOT TRAEJECTORIES FROM SOLO SOLUTION
-    final_trajectories = []
-    fig = plt.figure()
-    ax = fig.add_subplot(projection='3d')
-    times = np.linspace(0, Tf, H)
-    for i in range(N):
-        _, traj = generate_agent_states(init_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=dt)
-        ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
-        ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
-        final_trajectories.append(traj)
-    obs_sphere = Sphere([co[0], co[1], co[2]], ro)
-    obs_sphere.plot_3d(ax, alpha=0.2, color='red')
-    goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
-    goal_sphere.plot_3d(ax, alpha=0.2, color='green')
-    plt.show()
+    # final_trajectories = []
+    # fig = plt.figure()
+    # ax = fig.add_subplot(projection='3d')
+    # times = np.linspace(0, Tf, H)
+    # for i in range(N):
+    #     _, traj = generate_agent_states(init_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=dt)
+    #     ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
+    #     ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
+    #     final_trajectories.append(traj)
+    # obs_sphere = Sphere([co[0], co[1], co[2]], ro)
+    # obs_sphere.plot_3d(ax, alpha=0.2, color='red')
+    # goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
+    # goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+    # plt.show()
 
     # GENERATE SOLO ENERGIES
     # use the above inputs from generate_init_traj_quad to get the solo energies 
