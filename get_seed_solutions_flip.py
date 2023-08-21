@@ -77,8 +77,8 @@ csv_cols = ['trial_num', 'success', 'energy', 'f1', 'f4', 'obstacle', 'collision
 save_time = datetime.now()
 
 # SAVE SEED SOLUTIONS
-seed_csv_name = 'seed_results/N{}_H{}_{}.csv'.format(N, H, save_time)
-bc_obj_name = 'seed_results/control_inputs_N{}_H{}_{}.npy'.format(N, H, save_time)
+seed_csv_name = 'seed_results/distrinuted_{}_N{}_H{}_{}.csv'.format(args.notion, N, H, save_time)
+bc_obj_name = 'seed_results/control_inputs_{}_N{}_H{}_{}.npy'.format(args.notion, N, H, save_time)
 seed_file_obj = open(seed_csv_name, 'a')
 seed_writer_obj = writer(seed_file_obj)
 seed_writer_obj.writerow(csv_cols)
@@ -87,8 +87,6 @@ base_case_res = []
 np.save(bc_obj_name, np.array(base_case_res))
 
 # SAVE FINAL SOLUTIONS
-# u_csv_name = 'test_results/central_{}_N{}_H{}_{}.csv'.format(args.notion, N, H, save_time)
-# u_obj_name = 'test_results/control_inputs_central_{}_N{}_H{}_{}.npy'.format(args.notion, N, H, save_time)
 u_csv_name = 'test_results/distributed_{}_N{}_H{}_{}.csv'.format(args.notion, N, H, save_time)
 u_obj_name = 'test_results/control_inputs_distributed_{}_N{}_H{}_{}.npy'.format(args.notion, N, H, save_time)
 u_file_obj = open(u_csv_name, 'a')
@@ -245,6 +243,7 @@ for trial in range(trials):
     stp = time.process_time()
     try:
         final_u = obj.solve_nbf(seed_u=seed_u)
+        # final_u = obj.solve_nbf(seed_u=init_u)
         # final_u = obj.solve_nbf()
         final_u = np.array(final_u)  # H, N, control_input    
         final_u = final_u.transpose(1, 0, 2)  # N, H, control_input

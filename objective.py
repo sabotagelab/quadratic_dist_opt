@@ -627,12 +627,12 @@ class Objective():
             _, positions = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
             final_p = positions[self.H]
             positions = positions[1:]
-            distances_to_obstacle = np.linalg.norm(positions - c, axis=1)
+            distances_to_obstacle = np.linalg.norm(positions - c, axis=1) + 0.001
             if any(distances_to_obstacle < r):
                 # print('hit obstacle')
                 return False
             if not avoid_only:
-                distance_to_target = np.linalg.norm(final_p - cg)
+                distance_to_target = np.linalg.norm(final_p - cg) - 0.001
                 if distance_to_target > rg:
                     # print('doesnt reach')
                     # print(i, distance_to_target)
@@ -645,7 +645,7 @@ class Objective():
             for j in range(i+1, self.N):
                 _, positions_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
                 positions_j = positions_j[1:]
-                distances_to_obstacle = np.linalg.norm(positions_i - positions_j, axis=1)
+                distances_to_obstacle = np.linalg.norm(positions_i - positions_j, axis=1) + 0.001
                 if any(distances_to_obstacle < self.safe_dist):
                     # print('collision')
                     # print(distances_to_obstacle)
@@ -703,8 +703,6 @@ class Objective():
         u_t = cp.Variable(self.N*self.control_input_size)
         u_ref_t = cp.Parameter((self.N*self.control_input_size), 
                                value=np.zeros(self.N*self.control_input_size))
-        u_fair_t = cp.Parameter((self.N*self.control_input_size), 
-                               value=np.zeros(self.N*self.control_input_size))
         # w = cp.Variable(1)
         # Create Quad systems for each 
         robots = []
@@ -713,6 +711,9 @@ class Objective():
             robots.append(rob)
 
         if seed_u is not None:
+            u_fair_t = cp.Parameter((self.N*self.control_input_size), 
+                                    value=np.zeros(self.N*self.control_input_size))
+
             # objective = cp.Minimize(0.95*cp.sum_squares(u_t - u_ref_t) + 0.05*cp.sum_squares(u_t - u_fair_t))
             objective = cp.Minimize(cp.sum_squares(u_t - u_ref_t) + 0.1*cp.sum_squares(u_t - u_fair_t))
             # objective = cp.Minimize(cp.sum_squares(u_t - u_fair_t))
@@ -824,13 +825,13 @@ class Objective():
 
             if cbf_controller.status == 'infeasible':
                 # print(f"QP infeasible")
-                # print(cbf_controller)
+                print(cbf_controller)
                 return []
             
             for r in range(self.N):
                 idx_start = r*self.control_input_size
                 idx_end = idx_start + self.control_input_size
-                s, p = robots[r].forward(u_t.value[idx_start:idx_end])
+                _, _ = robots[r].forward(u_t.value[idx_start:idx_end])
             final_u.append(u_t.value.reshape(self.N, self.control_input_size))
         return final_u
     
