@@ -100,27 +100,26 @@ np.save(u_obj_name, np.array(u_res))
 
 count_reach = 0
 count_safe = 0
-solver_errors = 0
+solver_errors1 = 0
+solver_errors2 = 0
 for trial in range(trials):
     # SET INITIAL POSITIONS AND STATES
-    # if N <= 10:
-    #     x = np.random.uniform(low=-15, high=0, size=1)[0]
-    #     y = np.random.uniform(low=-15, high=15, size=1)[0]
-    # else:
-    #     x = np.random.uniform(low=-3, high=0, size=1)[0]
-    #     y = np.random.uniform(low=-15, high=-12, size=1)[0]
+    if N >= 10:
+        # x = np.random.uniform(low=-3, high=0, size=1)[0]
+        # y = np.random.uniform(low=-15, high=-12, size=1)[0]
+        x = np.random.uniform(low=-10, high=-5, size=1)[0]
+        y = np.random.uniform(low=-15, high=-10, size=1)[0]
 
     init_pos = []
     init_states = []
     for i in range(N):
-        # init_pos.append(np.array([x+(i), y, 0]))
-        if N <= 10:
-            x = np.random.uniform(low=-15, high=0, size=1)[0]
-            y = np.random.uniform(low=-15, high=15, size=1)[0]
+        if N < 10:
+            x = np.random.uniform(low=-15, high=-5, size=1)[0]
+            y = np.random.uniform(low=-15, high=-5, size=1)[0]
+            init_pos.append(np.array([x, y, 0]))
         else:
-            x = np.random.uniform(low=-3, high=0, size=1)[0]
-            y = np.random.uniform(low=-15, high=-12, size=1)[0]
-        init_pos.append(np.array([x, y, 0]))
+            init_pos.append(np.array([x+(i), y, 0]))
+        
         s = [init_pos[i]]
         s.append(np.array([0, 0, 0]))  # velo
         init_states.append(np.array(s).flatten())
@@ -133,8 +132,8 @@ for trial in range(trials):
         x_adj = 1 if i % 2 == 0 else 0
         z_adj = 1 if (i % 3 == 0) and N >= 10 else 0
         pos_adj = np.array([x_adj, 1, z_adj])
-        traj_pos, traj_accel = generate_init_traj_quad(init_pos[i], cg, H, Tf=Tf)
-        # traj_pos, traj_accel = generate_init_traj_quad(init_pos[i], cg+leftright*i*args.sd*pos_adj, H, Tf=Tf)
+        # traj_pos, traj_accel = generate_init_traj_quad(init_pos[i], cg, H, Tf=Tf)
+        traj_pos, traj_accel = generate_init_traj_quad(init_pos[i], cg+leftright*i*args.sd*pos_adj, H, Tf=Tf)
         init_u.append(traj_accel)
         init_traj.append(traj_pos)
 
@@ -142,21 +141,21 @@ for trial in range(trials):
     # print(init_u)
     # print(init_u.shape)
 
-    # # PLOT TRAEJECTORIES FROM SOLO SOLUTION
-    # final_trajectories = []
-    # fig = plt.figure()
-    # ax = fig.add_subplot(projection='3d')
-    # times = np.linspace(0, Tf, H)
-    # for i in range(N):
-    #     _, traj = generate_agent_states(init_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=dt)
-    #     ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
-    #     ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
-    #     final_trajectories.append(traj)
-    # obs_sphere = Sphere([co[0], co[1], co[2]], ro)
-    # obs_sphere.plot_3d(ax, alpha=0.2, color='red')
-    # goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
-    # goal_sphere.plot_3d(ax, alpha=0.2, color='green')
-    # plt.show()
+    # PLOT TRAEJECTORIES FROM SOLO SOLUTION
+    final_trajectories = []
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+    times = np.linspace(0, Tf, H)
+    for i in range(N):
+        _, traj = generate_agent_states(init_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=dt)
+        ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
+        ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
+        final_trajectories.append(traj)
+    obs_sphere = Sphere([co[0], co[1], co[2]], ro)
+    obs_sphere.plot_3d(ax, alpha=0.2, color='red')
+    goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
+    goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+    plt.show()
 
     # GENERATE SOLO ENERGIES
     # use the above inputs from generate_init_traj_quad to get the solo energies 
@@ -184,7 +183,7 @@ for trial in range(trials):
         # seed_obj, seed_u = obj.solve_central(init_u, steps=args.iter)
     except Exception as e:
         if e.__class__.__name__ == 'SolverError':
-            solver_errors += 1
+            solver_errors1 += 1
         # print('error solving seed solution, continue')
         continue
     etp = time.process_time()
@@ -239,7 +238,6 @@ for trial in range(trials):
         continue
 
     # print('Trial {} Result: {}'.format(trial, valid_sol))
-    
 
     obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=args.sd)
     obj.solo_energies = solo_energies
@@ -247,11 +245,13 @@ for trial in range(trials):
     stp = time.process_time()
     try:
         final_u = obj.solve_nbf(seed_u=seed_u)
+        # final_u = obj.solve_nbf()
         final_u = np.array(final_u)  # H, N, control_input    
         final_u = final_u.transpose(1, 0, 2)  # N, H, control_input
     except Exception as e:
-        print(e)
-        print('error solving NBF solution, continue')
+        # print(e)
+        # print('error solving NBF solution, continue')
+        solver_errors2 += 1
         continue
     etp = time.process_time()
     et = time.time()
@@ -280,8 +280,8 @@ for trial in range(trials):
     # plt.show()
 
     # Save Results to File
-    if obj.check_avoid_constraints(final_u, avoid_only=True):
-    # if obj.check_avoid_constraints(final_u):
+    # if obj.check_avoid_constraints(final_u, avoid_only=True):
+    if obj.check_avoid_constraints(final_u):
         final_valid_sol = int(obj.reach_constraint(final_u) <= 0)
         final_sol_energy = obj.quad(final_u.flatten())
         final_sol_fairness1 = obj.fairness(final_u.flatten())  # f1
@@ -306,7 +306,7 @@ for trial in range(trials):
     # else:
     #     print('bad NBF solution')
 
-# # PLOT FINAL TRAEJECTORIES FROM CONTROL INPUTS
+# PLOT FINAL TRAEJECTORIES FROM CONTROL INPUTS
 # final_trajectories = []
 # fig = plt.figure()
 # ax = fig.add_subplot(projection='3d')
@@ -316,10 +316,25 @@ for trial in range(trials):
 #     ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
 #     ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
 #     final_trajectories.append(traj)
+
 # obs_sphere = Sphere([co[0], co[1], co[2]], ro)
 # obs_sphere.plot_3d(ax, alpha=0.2, color='red')
+
 # goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
 # goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+
+# goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg*1.5)
+# goal_sphere.plot_3d(ax, alpha=0.1, color='blue')
+
+# goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg*2.0)
+# goal_sphere.plot_3d(ax, alpha=0.1, color='purple')
+
+# goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg*2.5)
+# goal_sphere.plot_3d(ax, alpha=0.1, color='yellow')
+
+# goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg*3)
+# goal_sphere.plot_3d(ax, alpha=0.1, color='red')
+# plt.legend()
 # plt.show()
 
-print('reach goal, safe goal, solver errors', count_reach, count_safe, solver_errors)
+print('reach goal, safe goal, solver errors1,2 ', count_reach, count_safe, solver_errors1, solver_errors2)

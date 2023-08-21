@@ -694,12 +694,11 @@ class Objective():
                     g_diag_list.append(np.zeros_like(g))
             g_diag.append(g_diag_list)
         g_diag = np.block(g_diag)
-        # copying Bardh's implementation # TODO: REVISE CHOICES FOR kx and kv to better ensure reach
-        kx = 0.7
-        kv = 1.8 if self.N < 10 else 1.6 if self.N in [10, 15] else 1.5
-        # kv = 1.8
+        
         c = self.obstacles['center']
         r = self.obstacles['radius']
+        cg = self.target['center']
+        rg = self.target['radius']
 
         u_t = cp.Variable(self.N*self.control_input_size)
         u_ref_t = cp.Parameter((self.N*self.control_input_size), 
@@ -710,21 +709,36 @@ class Objective():
         # Create Quad systems for each 
         robots = []
         for r in range(self.N):
-            rob = self.system_model(self.init_states[r])
+            rob = self.system_model(self.init_states[r], dt=self.dt)
             robots.append(rob)
 
         if seed_u is not None:
             # objective = cp.Minimize(0.95*cp.sum_squares(u_t - u_ref_t) + 0.05*cp.sum_squares(u_t - u_fair_t))
-            objective = cp.Minimize(cp.sum_squares(u_t - u_ref_t) + 0.05*cp.sum_squares(u_t - u_fair_t))
+            objective = cp.Minimize(cp.sum_squares(u_t - u_ref_t) + 0.1*cp.sum_squares(u_t - u_fair_t))
+            # objective = cp.Minimize(cp.sum_squares(u_t - u_fair_t))
         else:
             objective = cp.Minimize(cp.sum_squares(u_t - u_ref_t))
         final_u = []
         for t in range(self.H):
+            if t == 0:
+                Gt = 3
+            elif t == 1:
+                Gt = 2.5
+            elif t == 2:
+                Gt = 2.0
+            elif t == 3:
+                Gt == 1.5
+            else:
+                Gt = 1.0
+
             u_refs_fair = []
             u_refs = []
             target_pos = []
             state_collect = []
+            constraints = []
             for r in range(self.N):
+                kx = 0.7
+                kv = 1.8 if self.N < 10 else 1.6 if self.N in [10, 15] else 1.5
                 rn = self.rn[r]
                 leftright = 1 if r % 2 == 0 else -1
                 x_adj = 1 if r % 2 == 0 else 0
@@ -738,11 +752,13 @@ class Objective():
                 target_pos.append(target)
                 if seed_u is not None:
                     u_refs_fair.append(seed_u[r, t, :])
-            u_ref_t.value = np.array(u_refs).flatten()
-            u_fair_t.value = np.array(u_refs_fair).flatten()
 
-            # constraints = [u_t <= self.Ubox, -self.Ubox <= u_t]
-            constraints = []
+                # Add a reach constraint 
+                actual_pos = robots[r].state[0:3] + (rn + robots[r].state[3:6]*self.dt) + 0.5*u_t[r*3:(r*3+3)]*self.dt**2
+                constraints.append(cp.norm(actual_pos - cg) - rg*Gt <= 0)
+            u_ref_t.value = np.array(u_refs).flatten()
+            if seed_u is not None:
+                u_fair_t.value = np.array(u_refs_fair).flatten()
             
             # NBFs
             h_c_min = 9999
@@ -776,13 +792,24 @@ class Objective():
                     Arow = Arow_start + deriv + Arow_mid + nderiv + Arow_end
                     A.append(Arow)
 
+            if self.N == 3:
+                h_gamma = 5
+            elif self.N == 5:
+                h_gamma = 10
+            elif self.N == 7:
+                h_gamma = 20
+            elif self.N == 10:
+                h_gamma = 20
+            else:
+                h_gamma = 25
+
             h_min = np.min([h_c_min, h_o_min])
             B = np.array(B)
             Lfh1 = np.dot(np.dot(f_diag, np.array(state_collect).flatten()), B.T) 
             Lgh1_u = np.dot(B, g_diag) @ u_t
             # constraints.append(Lfh1 + Lgh1_u + h_o_min >= 0) 
             # constraints.append(Lfh1 + Lgh1_u + h_os >= 0) 
-            constraints.append(Lfh1 + Lgh1_u + h_min >= 0) 
+            constraints.append(Lfh1 + Lgh1_u + h_gamma*h_min**2 >= 0) 
 
             if self.N > 1:
                 A = np.array(A)
@@ -790,7 +817,7 @@ class Objective():
                 Lgh2_u = np.dot(A, g_diag) @ u_t
                 # constraints.append(Lfh2 + Lgh2_u + h_c_min >= 0) 
                 # constraints.append(Lfh2 + Lgh2_u + h_cs >= 0) 
-                constraints.append(Lfh2 + Lgh2_u + h_min >= 0) 
+                constraints.append(Lfh2 + Lgh2_u + h_gamma*h_min**2 >= 0) 
 
             cbf_controller = cp.Problem(objective, constraints)
             cbf_controller.solve(solver=CP_SOLVER)
