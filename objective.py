@@ -715,8 +715,8 @@ class Objective():
                                     value=np.zeros(self.N*self.control_input_size))
 
             # objective = cp.Minimize(0.95*cp.sum_squares(u_t - u_ref_t) + 0.05*cp.sum_squares(u_t - u_fair_t))
-            objective = cp.Minimize(cp.sum_squares(u_t - u_ref_t) + 0.1*cp.sum_squares(u_t - u_fair_t))
-            # objective = cp.Minimize(cp.sum_squares(u_t - u_fair_t))
+            # objective = cp.Minimize(cp.sum_squares(u_t - u_ref_t) + 0.1*cp.sum_squares(u_t - u_fair_t))
+            objective = cp.Minimize(cp.sum_squares(u_t - u_fair_t))
         else:
             objective = cp.Minimize(cp.sum_squares(u_t - u_ref_t))
         final_u = []
@@ -756,7 +756,8 @@ class Objective():
 
                 # Add a reach constraint 
                 actual_pos = robots[r].state[0:3] + (rn + robots[r].state[3:6]*self.dt) + 0.5*u_t[r*3:(r*3+3)]*self.dt**2
-                constraints.append(cp.norm(actual_pos - cg) - rg*Gt <= 0)
+                # constraints.append(cp.norm(actual_pos - cg) - rg*Gt <= 0)
+                constraints.append(cp.norm(actual_pos - cg) - rg - (self.H - t - 1)*((cp.norm(self.init_pos[r] - cg) - rg)/4)  <= 0)
             u_ref_t.value = np.array(u_refs).flatten()
             if seed_u is not None:
                 u_fair_t.value = np.array(u_refs_fair).flatten()
@@ -795,14 +796,22 @@ class Objective():
 
             if self.N == 3:
                 h_gamma = 5
+                h_e = 1
             elif self.N == 5:
-                h_gamma = 10
+                h_gamma = 3
+                h_e = 1
             elif self.N == 7:
-                h_gamma = 20
+                h_gamma = 1
+                h_e = 2
             elif self.N == 10:
                 h_gamma = 20
+                h_e = 2
+            elif self.N == 15:
+                h_gamma = 20
+                h_e = 2
             else:
                 h_gamma = 25
+                h_e = 2
 
             h_min = np.min([h_c_min, h_o_min])
             B = np.array(B)
@@ -810,7 +819,7 @@ class Objective():
             Lgh1_u = np.dot(B, g_diag) @ u_t
             # constraints.append(Lfh1 + Lgh1_u + h_o_min >= 0) 
             # constraints.append(Lfh1 + Lgh1_u + h_os >= 0) 
-            constraints.append(Lfh1 + Lgh1_u + h_gamma*h_min**2 >= 0) 
+            constraints.append(Lfh1 + Lgh1_u + h_gamma*h_min**h_e >= 0) 
 
             if self.N > 1:
                 A = np.array(A)
@@ -818,14 +827,14 @@ class Objective():
                 Lgh2_u = np.dot(A, g_diag) @ u_t
                 # constraints.append(Lfh2 + Lgh2_u + h_c_min >= 0) 
                 # constraints.append(Lfh2 + Lgh2_u + h_cs >= 0) 
-                constraints.append(Lfh2 + Lgh2_u + h_gamma*h_min**2 >= 0) 
+                constraints.append(Lfh2 + Lgh2_u + h_gamma*h_min**h_e >= 0) 
 
             cbf_controller = cp.Problem(objective, constraints)
             cbf_controller.solve(solver=CP_SOLVER)
 
             if cbf_controller.status == 'infeasible':
                 # print(f"QP infeasible")
-                print(cbf_controller)
+                # print(cbf_controller)
                 return []
             
             for r in range(self.N):

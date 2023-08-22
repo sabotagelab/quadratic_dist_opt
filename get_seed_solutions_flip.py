@@ -77,14 +77,14 @@ csv_cols = ['trial_num', 'success', 'energy', 'f1', 'f4', 'obstacle', 'collision
 save_time = datetime.now()
 
 # SAVE SEED SOLUTIONS
-seed_csv_name = 'seed_results/distrinuted_{}_N{}_H{}_{}.csv'.format(args.notion, N, H, save_time)
-bc_obj_name = 'seed_results/control_inputs_{}_N{}_H{}_{}.npy'.format(args.notion, N, H, save_time)
-seed_file_obj = open(seed_csv_name, 'a')
-seed_writer_obj = writer(seed_file_obj)
-seed_writer_obj.writerow(csv_cols)
+# seed_csv_name = 'seed_results/distrinuted_{}_N{}_H{}_{}.csv'.format(args.notion, N, H, save_time)
+# bc_obj_name = 'seed_results/control_inputs_{}_N{}_H{}_{}.npy'.format(args.notion, N, H, save_time)
+# seed_file_obj = open(seed_csv_name, 'a')
+# seed_writer_obj = writer(seed_file_obj)
+# seed_writer_obj.writerow(csv_cols)
 
-base_case_res = []
-np.save(bc_obj_name, np.array(base_case_res))
+# base_case_res = []
+# np.save(bc_obj_name, np.array(base_case_res))
 
 # SAVE FINAL SOLUTIONS
 u_csv_name = 'test_results/distributed_{}_N{}_H{}_{}.csv'.format(args.notion, N, H, save_time)
@@ -219,18 +219,18 @@ for trial in range(trials):
         count_reach += 1
 
         # Save Seed Solution To File For use in Central Experiment
-        base_case_res = np.load(bc_obj_name)
-        init_pos_and_final_u = np.append(np.array(init_pos).flatten(), seed_u.flatten())
-        if base_case_res.size == 0:
-            np.save(bc_obj_name, init_pos_and_final_u.reshape((1, (3*N)+n)))
-            del base_case_res
-        else:    
-            base_case_res = np.append(base_case_res, init_pos_and_final_u.reshape((1, (3*N)+n)), axis=0)
-            np.save(bc_obj_name, base_case_res)
-            del base_case_res
+        # base_case_res = np.load(bc_obj_name)
+        # init_pos_and_final_u = np.append(np.array(init_pos).flatten(), seed_u.flatten())
+        # if base_case_res.size == 0:
+        #     np.save(bc_obj_name, init_pos_and_final_u.reshape((1, (3*N)+n)))
+        #     del base_case_res
+        # else:    
+        #     base_case_res = np.append(base_case_res, init_pos_and_final_u.reshape((1, (3*N)+n)), axis=0)
+        #     np.save(bc_obj_name, base_case_res)
+        #     del base_case_res
 
-        res = [trial, seed_valid_sol, seed_sol_energy, seed_sol_fairness1, seed_sol_fairness4, seed_sol_obstacle, seed_sol_collision, walltime, cputime]
-        seed_writer_obj.writerow(res)
+        # res = [trial, seed_valid_sol, seed_sol_energy, seed_sol_fairness1, seed_sol_fairness4, seed_sol_obstacle, seed_sol_collision, walltime, cputime]
+        # seed_writer_obj.writerow(res)
     else: 
         # if doesn't reach don't bother 
         continue
