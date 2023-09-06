@@ -14,7 +14,7 @@ import time
 
 
 EPS = 1e-2
-np.random.seed(42)
+np.random.seed(43)
 
 parser = argparse.ArgumentParser(description='Optimization')
 # MAIN VARIABLES
@@ -77,24 +77,28 @@ csv_cols = ['trial_num', 'success', 'energy', 'f1', 'f4', 'obstacle', 'collision
 save_time = datetime.now()
 
 # SAVE SEED SOLUTIONS
-# seed_csv_name = 'seed_results/distrinuted_{}_N{}_H{}_{}.csv'.format(args.notion, N, H, save_time)
-# bc_obj_name = 'seed_results/control_inputs_{}_N{}_H{}_{}.npy'.format(args.notion, N, H, save_time)
+# seed_csv_name = 'seed_results/distributed_{}_N{}_H{}_{}.csv'.format(args.notion, N, H, save_time)
+# bc_obj_name = 'seed_results/control_inputs_distributed_{}_N{}_H{}_{}.npy'.format(args.notion, N, H, save_time)
+seed_csv_name = 'seed_results/central_{}_N{}_H{}_{}.csv'.format(args.notion, N, H, save_time)
+bc_obj_name = 'seed_results/control_inputs_central_{}_N{}_H{}_{}.npy'.format(args.notion, N, H, save_time)
 # seed_file_obj = open(seed_csv_name, 'a')
 # seed_writer_obj = writer(seed_file_obj)
 # seed_writer_obj.writerow(csv_cols)
 
-# base_case_res = []
+base_case_res = []
 # np.save(bc_obj_name, np.array(base_case_res))
 
 # SAVE FINAL SOLUTIONS
-u_csv_name = 'test_results/distributed_{}_N{}_H{}_{}.csv'.format(args.notion, N, H, save_time)
-u_obj_name = 'test_results/control_inputs_distributed_{}_N{}_H{}_{}.npy'.format(args.notion, N, H, save_time)
-u_file_obj = open(u_csv_name, 'a')
-u_writer_obj = writer(u_file_obj)
-u_writer_obj.writerow(csv_cols)
+# u_csv_name = 'test_results/distributed_{}_N{}_H{}_{}.csv'.format(args.notion, N, H, save_time)
+# u_obj_name = 'test_results/control_inputs_distributed_{}_N{}_H{}_{}.npy'.format(args.notion, N, H, save_time)
+u_csv_name = 'test_results/central_{}_N{}_H{}_{}.csv'.format(args.notion, N, H, save_time)
+u_obj_name = 'test_results/control_inputs_central_{}_N{}_H{}_{}.npy'.format(args.notion, N, H, save_time)
+# u_file_obj = open(u_csv_name, 'a')
+# u_writer_obj = writer(u_file_obj)
+# u_writer_obj.writerow(csv_cols)
 
 u_res = []
-np.save(u_obj_name, np.array(u_res))
+# np.save(u_obj_name, np.array(u_res))
 
 count_reach = 0
 count_safe = 0
@@ -140,20 +144,20 @@ for trial in range(trials):
     # print(init_u.shape)
 
     # PLOT TRAEJECTORIES FROM SOLO SOLUTION
-    # final_trajectories = []
-    # fig = plt.figure()
-    # ax = fig.add_subplot(projection='3d')
-    # times = np.linspace(0, Tf, H)
-    # for i in range(N):
-    #     _, traj = generate_agent_states(init_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=dt)
-    #     ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
-    #     ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
-    #     final_trajectories.append(traj)
-    # obs_sphere = Sphere([co[0], co[1], co[2]], ro)
-    # obs_sphere.plot_3d(ax, alpha=0.2, color='red')
-    # goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
-    # goal_sphere.plot_3d(ax, alpha=0.2, color='green')
-    # plt.show()
+    final_trajectories = []
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+    times = np.linspace(0, Tf, H)
+    for i in range(N):
+        _, traj = generate_agent_states(init_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=dt)
+        ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
+        ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
+        final_trajectories.append(traj)
+    obs_sphere = Sphere([co[0], co[1], co[2]], ro)
+    obs_sphere.plot_3d(ax, alpha=0.2, color='red')
+    goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
+    goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+    plt.show()
 
     # GENERATE SOLO ENERGIES
     # use the above inputs from generate_init_traj_quad to get the solo energies 
@@ -177,8 +181,8 @@ for trial in range(trials):
     st = time.time()
     stp = time.process_time()
     try:
-        seed_u, local_sols, fairness, converge_iter = obj.solve_distributed(init_u, steps=args.iter, dyn='quad')
-        # seed_obj, seed_u = obj.solve_central(init_u, steps=args.iter)
+        # seed_u, local_sols, fairness, converge_iter = obj.solve_distributed(init_u, steps=args.iter, dyn='quad')
+        seed_obj, seed_u = obj.solve_central(init_u, steps=args.iter)
     except Exception as e:
         if e.__class__.__name__ == 'SolverError':
             solver_errors1 += 1
@@ -195,17 +199,22 @@ for trial in range(trials):
     # final_trajectories = []
     # fig = plt.figure()
     # ax = fig.add_subplot(projection='3d')
-    # times = np.linspace(0, Tf, H)
-    # for i in range(N):
-    #     _, traj = generate_agent_states(seed_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=dt)
-    #     ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
-    #     ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
-    #     final_trajectories.append(traj)
+    times = np.linspace(0, Tf, H)
+    FINAL_POS = []
+    for i in range(N):
+        state_ref, traj = generate_agent_states(seed_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=dt)
+        # ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
+        # ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
+        # final_trajectories.append(traj)
+        FINAL_POS.append(traj[5,0:3])
     # obs_sphere = Sphere([co[0], co[1], co[2]], ro)
     # obs_sphere.plot_3d(ax, alpha=0.2, color='red')
     # goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
     # goal_sphere.plot_3d(ax, alpha=0.2, color='green')
     # plt.show()
+
+    # print(FINAL_POS)
+    
 
     # Save Results to File
     # if obj.check_avoid_constraints(seed_u): #and obj.reach_constraint(seed_u):
@@ -217,6 +226,7 @@ for trial in range(trials):
         seed_sol_obstacle = obj.obstacle(seed_u.flatten())
         seed_sol_collision = obj.avoid_constraint(seed_u.flatten())
         count_reach += 1
+        # print(seed_sol_fairness1)
 
         # Save Seed Solution To File For use in Central Experiment
         # base_case_res = np.load(bc_obj_name)
@@ -248,7 +258,7 @@ for trial in range(trials):
         final_u = np.array(final_u)  # H, N, control_input    
         final_u = final_u.transpose(1, 0, 2)  # N, H, control_input
     except Exception as e:
-        # print(e)
+        print(e)
         # print('error solving NBF solution, continue')
         solver_errors2 += 1
         continue
@@ -288,20 +298,21 @@ for trial in range(trials):
         final_sol_obstacle = obj.obstacle(final_u.flatten())
         final_sol_collision = obj.avoid_constraint(final_u.flatten())
         count_safe +=1
+        # print(final_sol_fairness1)
 
         # Save Final Solution To File
-        u_res = np.load(u_obj_name)
-        init_pos_and_final_u = np.append(np.array(init_pos).flatten(), final_u.flatten())
-        if u_res.size == 0:
-            np.save(u_obj_name, init_pos_and_final_u.reshape((1, (3*N)+n)))
-            del u_res
-        else:    
-            u_res = np.append(u_res, init_pos_and_final_u.reshape((1, (3*N)+n)), axis=0)
-            np.save(u_obj_name, u_res)
-            del u_res
+        # u_res = np.load(u_obj_name)
+        # init_pos_and_final_u = np.append(np.array(init_pos).flatten(), final_u.flatten())
+        # if u_res.size == 0:
+        #     np.save(u_obj_name, init_pos_and_final_u.reshape((1, (3*N)+n)))
+        #     del u_res
+        # else:    
+        #     u_res = np.append(u_res, init_pos_and_final_u.reshape((1, (3*N)+n)), axis=0)
+        #     np.save(u_obj_name, u_res)
+        #     del u_res
 
-        res = [trial, final_valid_sol, final_sol_energy, final_sol_fairness1, final_sol_fairness4, final_sol_obstacle, final_sol_collision, walltime, cputime]
-        u_writer_obj.writerow(res)
+        # res = [trial, final_valid_sol, final_sol_energy, final_sol_fairness1, final_sol_fairness4, final_sol_obstacle, final_sol_collision, walltime, cputime]
+        # u_writer_obj.writerow(res)
     # else:
     #     print('bad NBF solution')
 

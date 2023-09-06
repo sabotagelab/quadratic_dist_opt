@@ -76,7 +76,8 @@ def generate_init_traj_quad(init_pos, goal_pos, H, Tf=1, input_limits=QUAD_INPUT
         traj_pos.append(traj.get_position(t))
         traj_accels.append(traj.get_acceleration(t))
 
-    return np.array(traj_pos), np.array(traj_accels)
+    return np.array(traj_pos[1:]), np.array(traj_accels[1:])
+    # return np.array(traj_pos), np.array(traj_accels)
 
 
 

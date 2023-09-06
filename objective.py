@@ -60,6 +60,7 @@ class Objective():
             init_eps.append(np.zeros(self.H * control_input_size))
             local_sols[i] = []
         prev_eps = init_eps
+        prev_sols = list(local_sols.values())
 
         u = init_u
         fairness = []
@@ -67,17 +68,29 @@ class Objective():
         stop_count = 0
         for s in range(steps):
             # print('Iter {}'.format(s))
-            new_eps, sols = self.solve_local(u.flatten(), prev_eps, dyn=dyn)
-            if len(new_eps) == 0:
-                return [], [], []
+            try:
+                new_eps, new_sols = self.solve_local(u.flatten(), prev_eps, dyn=dyn)
+                if len(new_eps) == 0:
+                    new_eps = prev_eps
+                    new_sols = prev_sols
+                    # return [], [], [], []
+                # print('Solutions', new_sols)
+            except Exception as e:
+                # print('Distributed Method Error at Iteration {}'.format(s))
+                # print(e)
+                # print(prev_eps)
+                new_eps = prev_eps
+                new_sols = prev_sols
 
             for i in range(self.N):
                 u[i] += new_eps[i].reshape((self.H, control_input_size))
-                local_sols[i].append(sols[i])
+                local_sols[i].append(new_sols[i])
 
             fairness.append(self._fairness_central(u))
             prev_eps = new_eps
+            prev_sols = new_sols
 
+            # TODO: USE BETTER  CONVERGENCE CRITERIA
             for i in range(self.N):
                 curr_avg = np.mean(local_sols[i])
                 running_avgs[i].append(curr_avg)
@@ -93,7 +106,6 @@ class Objective():
 
     def solve_local(self, u, prev_eps, dyn='simple'):
         control_input_size = self.control_input_size
-        state_size = self.init_states[0].shape
         F = self.N * self.H * control_input_size
         
         u_param = cp.Parameter(F, value=u)
@@ -113,7 +125,6 @@ class Objective():
         solved_values = []
         local_sols = []
         for i in range(self.N):
-            # print('Agent {} tries to solve'.format(i))
             curr_agent_u = u.reshape((self.N, self.H, control_input_size))[i].flatten()
             if self.notion in [0, 3]:  ## the basic fairness notion, uTQu + f1 (or uTQu + surge fairness)
                 fairness_value = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i]
@@ -128,12 +139,11 @@ class Objective():
                 if self.with_penalty:
                     grad = fairness_value + \
                         self.beta * (grad_obstacle[i] * self.penalty(obst, grad=True) + grad_avoid[i] * 2 * self.penalty(avoid, grad=True))
-                    # print('grad with penalty', grad)
                 else:
                     grad = fairness_value - self.beta * grad_obstacle[i] - self.beta * 2 * grad_avoid[i]
             else:
                 grad = fairness_value
-            # print(grad.shape)
+
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
             prev_eps_param = cp.Parameter(self.H * control_input_size, value=prev_eps[i])
 
@@ -157,6 +167,8 @@ class Objective():
             # define constraint on final position based on eps and init state param
             target_center = self.target['center']
             target_radius = self.target['radius']
+            # cg = np.append(target_center, np.array([0, 0, 0]))
+            # rg = np.append(target_radius, np.array([0, 0, 0]))
             prev_state = self.init_states[i]
             if dyn =='quad':
                 pos = prev_state[0:3]
@@ -169,7 +181,7 @@ class Objective():
 
                     pos = pos + velo*t + (1.0/2.0)*accel*(t**2)
                     velo = velo + accel*t
-
+                # final_state = np.array([pos, velo]).flatten()
                 final_pos = pos
             else:
                 # assuming simple dynamics
@@ -191,18 +203,34 @@ class Objective():
                 -self.Ubox <= u_param + stack,
                 eps <= self.eps_bounds,
                 -1 * self.eps_bounds <= eps,
-                cp.norm(final_pos - target_center) <= target_radius
+                cp.norm(final_pos - target_center) <= target_radius  # TODO: change this to include velocities
+                # cp.norm(final_state - cg) <= rg
                 ]
 
             prob = cp.Problem(objective, constraints)
             prob.solve(verbose=False, solver=CP_SOLVER)
-            if prob.status == 'infeasible':
-                # print(grad)
-                # prob.solve(verbose=True, solver=CP_SOLVER)
-                # print('Agent {} Problem Status {}'.format(i, prob.status))
-                return [], []
-            solved_values.append(eps.value)
-            local_sols.append(prob.value)
+            # if prob.status == 'infeasible':
+            #     # prob.solve(verbose=True, solver=CP_SOLVER)
+            #     print('Agent {} Local Solution Infeasible'.format(i))
+            #     # If a single agent's local solution is infeasible don't use any solution from this iteration, return empty team solution
+            #     return [], []
+            # solved_values.append(eps.value)
+            # local_sols.append(prob.value)
+            try:
+                prob.solve(verbose=False, solver=CP_SOLVER)
+                if prob.status == 'infeasible':
+                    # prob.solve(verbose=True, solver=CP_SOLVER)
+                    # print('Agent {} Local Solution Infeasible'.format(i))
+                    # If a single agent's local solution is infeasible don't use any solution from this iteration, return empty team solution
+                    return [], []
+                solved_values.append(eps.value)
+                local_sols.append(prob.value)
+            except Exception as e:
+                # Try to catch solver error. If an agent runs into solver error, catch and use previous agent's solution
+                # print(e)
+                # print('Agent {} Solver Error'.format(i))
+                solved_values.append(prev_eps[i])
+                local_sols.append(0)  # TODO: get solution from previous iteration
 
         return solved_values, local_sols
     
@@ -223,7 +251,7 @@ class Objective():
                        constraints=constraints,
                        options={'maxiter':steps}, method=SCIPY_SOLVER)
         if not res.success:
-            # print(res.message)
+            print(res.message)
             return np.inf, []
         final_u = res.x
         final_obj = res.fun
@@ -250,8 +278,6 @@ class Objective():
                 return fairness_value + \
                     self.beta * (self.penalty(self.obstacle(u)) + 2*self.penalty(self.avoid_constraint(u)))
             else:
-                # print(self.beta * self.obstacle(u))
-                # print(self.beta * self.avoid_constraint(u))
                 return fairness_value - \
                     self.beta * self.obstacle(u) - \
                     self.beta * 2*self.avoid_constraint(u)
@@ -270,10 +296,14 @@ class Objective():
         target_radius = self.target['radius']
         num_agents = len(self.init_states)
         reach = -np.inf
+        cg = np.append(target_center, np.array([0, 0, 0]))
+        rg = np.append(target_radius, np.array([0, 0, 0]))  # TODO: wrong dim
         for i in range(num_agents):
-            _, pos_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
+            state_i, pos_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
+            final_state = state_i[len(state_i)-1]
             final_pos = pos_i[len(pos_i)-1]
             reach = np.maximum(reach, np.linalg.norm(final_pos - target_center) - target_radius)
+            # reach = np.maximum(reach, np.linalg.norm(final_state - cg) - rg)
         return reach
         
     ##########################################################
@@ -341,11 +371,6 @@ class Objective():
             distances_to_obstacle = np.linalg.norm(positions - c, axis=1)
             partial_smoothmin = np.sum(np.exp(-1 * self.gamma * (distances_to_obstacle ** 2 - r**2))) / (logsum + EPS)
             partial_loss = 2 * np.linalg.norm(np.dot(g.T, states.T))
-            # if dyn == 'simple':
-            #     system_partial = 2 * np.ones_like(u_reshape[1])
-            # else:
-            #     system_partial = 2 * self.dt * u_reshape[i]
-            # partial = np.multiply(partial_smoothmin * 2 * distances_to_obstacle, system_partial.T)
             partial = np.multiply(partial_smoothmin, partial_loss)
             partials.append(partial.flatten())
 
@@ -430,11 +455,6 @@ class Objective():
             
             partial_smoothmin = np.exp(-1 * self.gamma * total_distances) / (logsum+EPS)
             
-            # if dyn == 'simple':
-            #     system_partial = 2 * np.ones_like(u_reshape[1])
-            # else:
-            #     system_partial = 2 * self.dt * u_reshape[i]
-            # partial = np.multiply(partial_smoothmin * 2 * distances_to_obstacle, system_partial.T)
             partial_loss = 2 * np.linalg.norm(np.dot(g.T, states_i.T))
             partial = np.multiply(partial_smoothmin, partial_loss)
             partials.append(partial.flatten())
@@ -462,12 +482,11 @@ class Objective():
         control_input_size = self.control_input_size
 
         u_reshape = u.reshape((self.N, self.H, control_input_size))
-        agent_sum_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1)
+        agent_sum_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1) / np.array(self.solo_energies)
         mean_energy = np.mean(agent_sum_energies)
         diffs = 0
         for i in range(self.N):
-            # NORMALIZE THE NORM BY AGENT SOLO ENERGY
-            diffs += (np.linalg.norm(u_reshape[i])/self.solo_energies[i] - mean_energy/self.solo_energies[i]) ** 2
+            diffs += (np.linalg.norm(agent_sum_energies[i] - mean_energy)) ** 2
     
         fairness = 1/(self.N) * np.sum(diffs)
         return fairness
@@ -476,12 +495,11 @@ class Objective():
         control_input_size = self.control_input_size
 
         u_reshape = u.reshape((self.N, self.H, control_input_size))
-        agent_sum_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1)
+        agent_sum_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1) / np.array(self.solo_energies)
         mean_energy = np.mean(agent_sum_energies)
         partials = []
         for i in range(self.N):
-            # NORMALIZE THE NORM BY AGENT SOLO ENERGY
-            grad = 2 * (1/self.N) * (np.linalg.norm(u_reshape[i])/self.solo_energies[i] - mean_energy/self.solo_energies[i])
+            grad = 2 * (1/self.N) * (np.linalg.norm(agent_sum_energies[i] - mean_energy))
             partials.append(grad)
             
         return partials
@@ -493,6 +511,7 @@ class Objective():
         else:
             return self._surge_fairness_central(u)
 
+    # TODO: NORMALIZE SURGE FAIRNESS
     def _surge_fairness_central(self, u):
         control_input_size = self.control_input_size
 
@@ -629,14 +648,11 @@ class Objective():
             positions = positions[1:]
             distances_to_obstacle = np.linalg.norm(positions - c, axis=1) + 0.001
             if any(distances_to_obstacle < r):
-                # print('hit obstacle')
-                return False
+                return 1
             if not avoid_only:
                 distance_to_target = np.linalg.norm(final_p - cg) - 0.001
                 if distance_to_target > rg:
-                    # print('doesnt reach')
-                    # print(i, distance_to_target)
-                    return False
+                    return 3
 
         # Check Collision Avoidance
         for i in range(self.N):
@@ -647,18 +663,15 @@ class Objective():
                 positions_j = positions_j[1:]
                 distances_to_obstacle = np.linalg.norm(positions_i - positions_j, axis=1) + 0.001
                 if any(distances_to_obstacle < self.safe_dist):
-                    # print('collision')
-                    # print(distances_to_obstacle)
-                    return False
-
-        return True
+                    return 2
+        return 0
     
 
     ##########################################################
     # Seed Solution (Obstacle Avoidance and Mutual Separation Only)
     ###########################################################
 
-    def solve_nbf(self, seed_u=None):
+    def solve_nbf(self, seed_u=None, final_pos=None, mpc=False):
         # Centrally Solve for Obstacle Avoidance
         f = np.array([
             [1, 0, 0, self.dt, 0, 0],
@@ -701,9 +714,8 @@ class Objective():
         rg = self.target['radius']
 
         u_t = cp.Variable(self.N*self.control_input_size)
-        u_ref_t = cp.Parameter((self.N*self.control_input_size), 
-                               value=np.zeros(self.N*self.control_input_size))
-        # w = cp.Variable(1)
+        alpha = cp.Variable(1)
+        
         # Create Quad systems for each 
         robots = []
         for r in range(self.N):
@@ -713,54 +725,40 @@ class Objective():
         if seed_u is not None:
             u_fair_t = cp.Parameter((self.N*self.control_input_size), 
                                     value=np.zeros(self.N*self.control_input_size))
-
-            # objective = cp.Minimize(0.95*cp.sum_squares(u_t - u_ref_t) + 0.05*cp.sum_squares(u_t - u_fair_t))
-            # objective = cp.Minimize(cp.sum_squares(u_t - u_ref_t) + 0.1*cp.sum_squares(u_t - u_fair_t))
-            objective = cp.Minimize(cp.sum_squares(u_t - u_fair_t))
+            objective = cp.Minimize(cp.sum_squares(u_t - u_fair_t) + alpha**2)
         else:
+            u_ref_t = cp.Parameter((self.N*self.control_input_size), 
+                                   value=np.zeros(self.N*self.control_input_size))
             objective = cp.Minimize(cp.sum_squares(u_t - u_ref_t))
         final_u = []
         for t in range(self.H):
-            if t == 0:
-                Gt = 3
-            elif t == 1:
-                Gt = 2.5
-            elif t == 2:
-                Gt = 2.0
-            elif t == 3:
-                Gt == 1.5
-            else:
-                Gt = 1.0
-
             u_refs_fair = []
             u_refs = []
             target_pos = []
             state_collect = []
             constraints = []
             for r in range(self.N):
+                state_collect.append(robots[r].state)
+                if seed_u is not None:
+                    u_refs_fair.append(seed_u[r, t, :])
+                    continue
                 kx = 0.7
                 kv = 1.8 if self.N < 10 else 1.6 if self.N in [10, 15] else 1.5
                 rn = self.rn[r]
                 leftright = 1 if r % 2 == 0 else -1
                 x_adj = 1 if r % 2 == 0 else 0
                 z_adj = 1 if (r % 3 == 0) and self.N >= 10 else 0
-                pos_adj = np.array([x_adj, 1, z_adj])
-                state_collect.append(robots[r].state)
+                pos_adj = np.array([x_adj, 1, z_adj]) 
                 velocity_desired = - kx * ( robots[r].state[0:3] - (self.target['center'] + leftright*r*self.safe_dist*pos_adj) )
                 u_desired = - kv * ( robots[r].state[3:6] - velocity_desired )
                 u_refs.append(u_desired)
                 target = robots[r].state[0:3] + (rn + robots[r].state[3:6]*self.dt) + 0.5*u_desired*self.dt**2
                 target_pos.append(target)
-                if seed_u is not None:
-                    u_refs_fair.append(seed_u[r, t, :])
 
-                # Add a reach constraint 
-                actual_pos = robots[r].state[0:3] + (rn + robots[r].state[3:6]*self.dt) + 0.5*u_t[r*3:(r*3+3)]*self.dt**2
-                # constraints.append(cp.norm(actual_pos - cg) - rg*Gt <= 0)
-                constraints.append(cp.norm(actual_pos - cg) - rg - (self.H - t - 1)*((cp.norm(self.init_pos[r] - cg) - rg)/4)  <= 0)
-            u_ref_t.value = np.array(u_refs).flatten()
             if seed_u is not None:
                 u_fair_t.value = np.array(u_refs_fair).flatten()
+            else:
+                u_ref_t.value = np.array(u_refs).flatten()
             
             # NBFs
             h_c_min = 9999
@@ -769,22 +767,39 @@ class Objective():
             h_o_min = 9999
             h_os = []
             B = []
+            V_max = -9999
+            Vs = []
+            C = []
             for r in range(self.N):
                 # obstacle avoidance
                 pos = robots[r].state[0:3]
                 h_o = (pos[0] - c[0])**2 + (pos[1] - c[1])**2 + (pos[2] - c[2])**2 - r**2
-                h_os.append(1*h_o**3)
+                # h_os.append(1*h_o**3)
+                h_os.append(h_o)
                 h_o_min = np.min([h_o_min, h_o])
                 Brow_start = [0 for i in range(r*6)]
                 Brow_end = [0 for i in range((r+1)*6, self.N*6)]
                 Brow = Brow_start + [2*(pos[0] - c[0]), 2*(pos[1] - c[1]), 2*(pos[2] - c[2]), 0, 0, 0] + Brow_end
                 B.append(Brow)
 
+                # reach goal  # TODO: CHANGE V TO INCLUDE RADIUS?
+                V = (pos[0] - cg[0])**2 + (pos[1] - cg[1])**2 + (pos[2] - cg[2])**2 #+ \
+                    #   robots[r].state[3]**2 + robots[r].state[4]**2 + robots[r].state[5]**2
+                Vs.append(V)
+                # Vs.append(V**3)
+                V_max = np.max([V_max, V])
+                Crow_start = [0 for i in range(r*6)]
+                Crow_end = [0 for i in range((r+1)*6, self.N*6)]
+                Crow = Crow_start + [2*(pos[0] - cg[0]), 2*(pos[1] - cg[1]), 2*(pos[2] - cg[2]), 0, 0, 0] + Crow_end
+                                    #  2*robots[r].state[3], 2*robots[r].state[4], 2*robots[r].state[5]] + Crow_end
+                C.append(Crow)
+
                 # mutual separation
                 for s in range(r+1, self.N):
                     pos1 = robots[s].state[0:3]
                     h_c = (pos[0] - pos1[0])**2 + (pos[1] - pos1[1])**2 + (pos[2] - pos1[2])**2 - self.safe_dist**2
-                    h_cs.append(1*h_c**3)
+                    # h_cs.append(1*h_c**3)
+                    h_cs.append(h_c)
                     h_c_min = np.min([h_c_min, h_c])
                     deriv = [2*(pos[0] - pos1[0]), 2*(pos[1] - pos1[1]), 2*(pos[2] - pos1[2]), 0, 0, 0]
                     nderiv = [-2*(pos[0] - pos1[0]), -2*(pos[1] - pos1[1]), -2*(pos[2] - pos1[2]), 0, 0, 0]
@@ -795,21 +810,27 @@ class Objective():
                     A.append(Arow)
 
             if self.N == 3:
-                h_gamma = 5
+                V_alpha = 1
+                h_gamma = 2
                 h_e = 1
             elif self.N == 5:
-                h_gamma = 3
+                V_alpha = 1
+                h_gamma = 2 #5
                 h_e = 1
             elif self.N == 7:
-                h_gamma = 1
+                V_alpha = 1
+                h_gamma = 50 # 50
                 h_e = 2
             elif self.N == 10:
+                V_alpha = 1
                 h_gamma = 20
                 h_e = 2
             elif self.N == 15:
+                V_alpha = 1
                 h_gamma = 20
                 h_e = 2
             else:
+                V_alpha = 1
                 h_gamma = 25
                 h_e = 2
 
@@ -817,23 +838,25 @@ class Objective():
             B = np.array(B)
             Lfh1 = np.dot(np.dot(f_diag, np.array(state_collect).flatten()), B.T) 
             Lgh1_u = np.dot(B, g_diag) @ u_t
-            # constraints.append(Lfh1 + Lgh1_u + h_o_min >= 0) 
-            # constraints.append(Lfh1 + Lgh1_u + h_os >= 0) 
             constraints.append(Lfh1 + Lgh1_u + h_gamma*h_min**h_e >= 0) 
+
+            C = np.array(C)
+            LfV = np.dot(np.dot(f_diag, np.array(state_collect).flatten()), C.T) 
+            LgV_u = np.dot(C, g_diag) @ u_t
+            constraints.append(LfV + LgV_u + V_alpha*V_max <= alpha) 
 
             if self.N > 1:
                 A = np.array(A)
                 Lfh2 = np.dot(np.dot(f_diag, np.array(state_collect).flatten()), A.T) 
                 Lgh2_u = np.dot(A, g_diag) @ u_t
-                # constraints.append(Lfh2 + Lgh2_u + h_c_min >= 0) 
-                # constraints.append(Lfh2 + Lgh2_u + h_cs >= 0) 
                 constraints.append(Lfh2 + Lgh2_u + h_gamma*h_min**h_e >= 0) 
 
             cbf_controller = cp.Problem(objective, constraints)
             cbf_controller.solve(solver=CP_SOLVER)
 
-            if cbf_controller.status == 'infeasible':
+            if cbf_controller.status in ['infeasible', 'infeasible_inaccurate']:
                 # print(f"QP infeasible")
+                # cbf_controller.solve(solver=CP_SOLVER, verbose=True)
                 # print(cbf_controller)
                 return []
             
@@ -842,7 +865,10 @@ class Objective():
                 idx_end = idx_start + self.control_input_size
                 _, _ = robots[r].forward(u_t.value[idx_start:idx_end])
             final_u.append(u_t.value.reshape(self.N, self.control_input_size))
-        return final_u
+            if mpc:
+                break
+            # print(alpha.value)
+        return final_u, h_min, V_max
     
     ##########################################################
     # Penalty Function for Online Solution
