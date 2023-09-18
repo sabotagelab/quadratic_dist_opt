@@ -29,13 +29,13 @@ parser.add_argument('--notion', type=int, default=0)
 parser.add_argument('--alpha', type=float, default=.001)
 parser.add_argument('--beta', type=float, default=1)
 parser.add_argument('--gamma', type=float, default=1.)
-parser.add_argument('--kappa', type=float, default=300)
+parser.add_argument('--kappa', type=float, default=500)
 parser.add_argument('--eps_bounds', type=float, default=25)
    
 
 # TRY NOT TO CHANGE THESE
 parser.add_argument('--ro', type=float, default=1)
-parser.add_argument('--co', type=float, default=-1)
+parser.add_argument('--co', type=float, default=-4)
 parser.add_argument('--rg', type=float, default=5)
 parser.add_argument('--cg', type=float, default=5)
 parser.add_argument('--Ubox', type=float, default=300)
@@ -83,7 +83,7 @@ misses_goal = 0
 
 # SET INITIAL POSITIONS AND STATES
 for t in range(trials):
-    # print('Trial {}'.format(t))
+    print('Trial {}'.format(t))
     trial_error = False
     if N >= 10:
         # x = np.random.uniform(low=-3, high=0, size=1)[0]
@@ -123,6 +123,7 @@ for t in range(trials):
     final_trajectories = [init_pos]
     clf_values = []
     cbf_values = []
+    last_alpha = None
     for Hbar in range(H, 0, -1):
         init_u = []
         init_traj = []
@@ -186,25 +187,33 @@ for t in range(trials):
             #     goal_sphere.plot_3d(ax, alpha=0.2, color='green')
             #     plt.show()
         except Exception as e:
-            # print(e)
-            # print('Fair Planner error at time {}'.format(H-Hbar))
-            seed_u = init_u
+            print(e)
+            print('Fair Planner error at time {}'.format(H-Hbar))
+            # use previous fair trajectory input instead of solo trajectory input if possible
+            if Hbar == H:
+                seed_u = init_u  # TODO: change to 
+            else:
+                seed_u = seed_u[:,1:,:]
             fair_planner_solver_errors += 1
 
         obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=args.sd)
         obj.solo_energies = solo_energies
         try:
-            final_u, cbf_value, clf_value = obj.solve_nbf(seed_u=init_u, mpc=True)
+            final_u, cbf_value, clf_value, nbf_alpha = obj.solve_nbf(seed_u=seed_u, last_alpha=last_alpha, mpc=True)
             final_u = np.array(final_u)  # H, N, control_input    
             final_u = final_u.transpose(1, 0, 2)  # N, H, control_input
             cbf_values.append(cbf_value)
             clf_values.append(clf_value)
+            last_alpha = nbf_alpha
         except Exception as e:
-            # print(e)
-            # print('Cant find next step in trajectory at time {}'.format(H-Hbar))
+            print(e)
+            print('Cant find next step in trajectory at time {}'.format(H-Hbar))
             nbf_solver_errors += 1
             trial_error = True
             break
+
+        # TESTING LOCAL NBF
+        obj.local_nbf(0, seed_u, last_alpha, h_gamma=1)
         
         Tbar = Tf - (H-Hbar)*Tf/H
 
@@ -244,28 +253,6 @@ for t in range(trials):
     final_trajectories = np.array(final_trajectories)
     final_trajectories = final_trajectories.transpose(1, 0, 2)  # N, H, positions
 
-    # print('Figure Final Trajectories')
-    # fig = plt.figure()
-    # ax = fig.add_subplot(projection='3d')
-    # times = np.linspace(0, Tf, H)
-    # for i in range(N):
-    #     traj = final_trajectories[i]
-    #     ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
-    #     ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
-    # obs_sphere = Sphere([co[0], co[1], co[2]], ro)
-    # obs_sphere.plot_3d(ax, alpha=0.2, color='red')
-    # goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
-    # goal_sphere.plot_3d(ax, alpha=0.2, color='green')
-    # plt.show()
-
-    # print("Figure CLF and CBF Values")
-    # fig, axs = plt.subplots(2)
-    # axs[0].plot(list(range(len(cbf_values))), cbf_values)
-    # axs[0].set_title('h_min')
-    # axs[1].plot(list(range(len(clf_values))), clf_values)
-    # axs[1].set_title('V_max')
-    # plt.show()
-
     n = N*H*control_input_size
     Q = np.random.randn(n, n)   # variable for quadratic objective
     Q = Q.T @ Q
@@ -288,6 +275,27 @@ for t in range(trials):
     else:
         misses_goal += 1
         print('Missed Goal')
+        print('Figure Final Trajectories')
+        fig = plt.figure()
+        ax = fig.add_subplot(projection='3d')
+        times = np.linspace(0, Tf, H)
+        for i in range(N):
+            traj = final_trajectories[i]
+            ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
+            ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
+        obs_sphere = Sphere([co[0], co[1], co[2]], ro)
+        obs_sphere.plot_3d(ax, alpha=0.2, color='red')
+        goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
+        goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+        plt.show()
+
+        print("Figure CLF and CBF Values")
+        fig, axs = plt.subplots(2)
+        axs[0].plot(list(range(len(cbf_values))), cbf_values)
+        axs[0].set_title('h_min')
+        axs[1].plot(list(range(len(clf_values))), clf_values)
+        axs[1].set_title('V_max')
+        plt.show()
 
 print('Successful Trials {}'.format(successful_trials))
 print('Hit Obstacle {}'.format(collide_with_obstacle))

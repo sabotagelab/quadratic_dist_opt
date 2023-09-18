@@ -29,17 +29,7 @@ class Objective():
         self.dt = dt
 
         self.heterogeneous = False
-        self.with_penalty = True
         self.with_safety = False
-        if self.heterogeneous:
-            self.rn = []
-            for r in range(N):
-                if r % 2 == 0: 
-                    self.rn.append(np.random.normal(0, 0.01))
-                else:
-                    self.rn.append(0)
-        else:
-            self.rn = [0 for r in range(N)]
         
         self.solo_energies = [1 for i in range(N)]
         
@@ -116,11 +106,6 @@ class Objective():
             grad_fairness = self.surge_fairness(u, grad=True)
         else:
             grad_fairness = self.fairness(u, grad=True)
-        if self.with_safety:
-            grad_obstacle = self.obstacle(u, grad=True, dyn=dyn)
-            obst = self.obstacle(u, dyn=dyn)
-            grad_avoid = self.avoid_constraint(u, grad=True, dyn=dyn)
-            avoid = self.avoid_constraint(u, dyn=dyn)
 
         solved_values = []
         local_sols = []
@@ -134,16 +119,8 @@ class Objective():
                 fairness_value = np.zeros(self.H*control_input_size)
             else:  # f1 or f2 only  (ie self.notion in [4, 5])
                 fairness_value = np.ones(self.H*control_input_size) * self.alpha * grad_fairness[i]
-            
-            if self.with_safety:
-                if self.with_penalty:
-                    grad = fairness_value + \
-                        self.beta * (grad_obstacle[i] * self.penalty(obst, grad=True) + grad_avoid[i] * 2 * self.penalty(avoid, grad=True))
-                else:
-                    grad = fairness_value - self.beta * grad_obstacle[i] - self.beta * 2 * grad_avoid[i]
-            else:
-                grad = fairness_value
 
+            grad = fairness_value
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
             prev_eps_param = cp.Parameter(self.H * control_input_size, value=prev_eps[i])
 
@@ -167,8 +144,8 @@ class Objective():
             # define constraint on final position based on eps and init state param
             target_center = self.target['center']
             target_radius = self.target['radius']
-            # cg = np.append(target_center, np.array([0, 0, 0]))
-            # rg = np.append(target_radius, np.array([0, 0, 0]))
+            cg = np.append(target_center, np.array([0, 0, 0]))
+            rg = np.array([target_radius, target_radius, target_radius, 0, 0, 0])
             prev_state = self.init_states[i]
             if dyn =='quad':
                 pos = prev_state[0:3]
@@ -204,31 +181,24 @@ class Objective():
                 eps <= self.eps_bounds,
                 -1 * self.eps_bounds <= eps,
                 cp.norm(final_pos - target_center) <= target_radius  # TODO: change this to include velocities
-                # cp.norm(final_state - cg) <= rg
+                # cp.abs(final_state - cg) <= rg
                 ]
 
             prob = cp.Problem(objective, constraints)
             prob.solve(verbose=False, solver=CP_SOLVER)
-            # if prob.status == 'infeasible':
-            #     # prob.solve(verbose=True, solver=CP_SOLVER)
-            #     print('Agent {} Local Solution Infeasible'.format(i))
-            #     # If a single agent's local solution is infeasible don't use any solution from this iteration, return empty team solution
-            #     return [], []
-            # solved_values.append(eps.value)
-            # local_sols.append(prob.value)
             try:
                 prob.solve(verbose=False, solver=CP_SOLVER)
                 if prob.status == 'infeasible':
                     # prob.solve(verbose=True, solver=CP_SOLVER)
-                    # print('Agent {} Local Solution Infeasible'.format(i))
+                    print('Agent {} Local Solution Infeasible'.format(i))
                     # If a single agent's local solution is infeasible don't use any solution from this iteration, return empty team solution
                     return [], []
                 solved_values.append(eps.value)
                 local_sols.append(prob.value)
             except Exception as e:
                 # Try to catch solver error. If an agent runs into solver error, catch and use previous agent's solution
-                # print(e)
-                # print('Agent {} Solver Error'.format(i))
+                print(e)
+                print('Agent {} Solver Error'.format(i))
                 solved_values.append(prev_eps[i])
                 local_sols.append(0)  # TODO: get solution from previous iteration
 
@@ -305,161 +275,7 @@ class Objective():
             reach = np.maximum(reach, np.linalg.norm(final_pos - target_center) - target_radius)
             # reach = np.maximum(reach, np.linalg.norm(final_state - cg) - rg)
         return reach
-        
-    ##########################################################
-    # Obstacle Avoidance Constraints
-    ###########################################################
 
-    def obstacle(self, u, grad=False, dyn='simple'):
-        if grad:
-            return self._obstacle_local(u, dyn=dyn)
-        else:
-            return self._obstacle_central(u)
-
-    def _obstacle_central(self, u):
-        control_input_size = self.control_input_size
-        u_reshape = u.reshape((self.N, self.H, control_input_size))
-        c = self.obstacles['center']
-        r = self.obstacles['radius']
-        
-        logsum = 0
-        for i in range(self.N):
-            _, positions = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
-            positions = positions[1:]
-            distances_to_obstacle = np.linalg.norm(positions - c, axis=1)
-            logsum += np.sum(np.exp(-1 * self.gamma * (
-                distances_to_obstacle ** 2 - r**2
-                )))
-        
-        return -1 / self.gamma * np.log(logsum + EPS)  # small EPS in case all distances to obstacle is very far, causing logsum to go to 0
-
-    def _obstacle_local(self, u, dyn='simple'):
-        g = np.array([
-            [0.5*self.dt**2, 0, 0],
-            [0, 0.5*self.dt**2, 0],
-            [0, 0, 0.5*self.dt**2],
-            [self.dt, 0, 0],
-            [0, self.dt, 0],
-            [0, 0, self.dt]])
-        
-        control_input_size = self.control_input_size
-        u_reshape = u.reshape((self.N, self.H, control_input_size))
-        c = self.obstacles['center']
-        r = self.obstacles['radius']
-        
-        s = []
-        p = []
-        logsum = EPS
-        for i in range(self.N):
-            states, positions = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
-            states = states[1:]
-            positions = positions[1:]
-            distances_to_obstacle = np.linalg.norm(positions - c, axis=1)
-            logsum += np.sum(np.exp(-1 * self.gamma * (
-                distances_to_obstacle ** 2 - r**2
-                )))
-            s.append(states)
-            p.append(positions)
-
-        s = np.array(s)
-        p = np.array(p)
-
-        partials = []
-        for i in range(self.N):
-            states = s[i]
-            positions = p[i]
-            distances_to_obstacle = np.linalg.norm(positions - c, axis=1)
-            partial_smoothmin = np.sum(np.exp(-1 * self.gamma * (distances_to_obstacle ** 2 - r**2))) / (logsum + EPS)
-            partial_loss = 2 * np.linalg.norm(np.dot(g.T, states.T))
-            partial = np.multiply(partial_smoothmin, partial_loss)
-            partials.append(partial.flatten())
-
-        return partials
-        
-
-    ##########################################################
-    # Mutual Separation Constraints
-    ###########################################################
-
-    def avoid_constraint(self, u, grad=False, dyn='simple'):
-        if grad:
-            return self._avoid_local(u, dyn=dyn)
-        else:
-            return self._avoid_central(u)
-
-    def _avoid_central(self, u):
-        control_input_size = self.control_input_size
-        u_reshape = u.reshape((self.N, self.H, control_input_size))
-        
-        logsum = 0
-        for i in range(self.N):
-            _, positions_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
-            positions_i = positions_i[1:]
-            for j in range(i+1, self.N):
-                if j == i:
-                    continue
-                _, positions_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
-                positions_j = positions_j[1:]
-            
-                distances = np.linalg.norm(positions_i - positions_j, axis=1)
-                logsum += np.sum(np.exp(-1 * self.gamma * (distances ** 2 - self.safe_dist**2)))
-        
-        return -1 / self.gamma * np.log(logsum + EPS)  # small EPS in case all distances to obstacle is very far, causing logsum to go to 0)
-
-    def _avoid_local(self, u, dyn='simple'):
-        g = np.array([
-            [0.5*self.dt**2, 0, 0],
-            [0, 0.5*self.dt**2, 0],
-            [0, 0, 0.5*self.dt**2],
-            [self.dt, 0, 0],
-            [0, self.dt, 0],
-            [0, 0, self.dt]])
-        
-        control_input_size = self.control_input_size
-        u_reshape = u.reshape((self.N, self.H, control_input_size))
-        
-        s = []
-        p = []
-        logsum = EPS
-        for i in range(self.N):
-            states_i, positions_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
-            states_i = states_i[1:]
-            positions_i = positions_i[1:]
-            for j in range(i+1, self.N):
-                if j == i:
-                    continue
-                _, positions_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
-                positions_j = positions_j[1:]
-            
-                distances = np.linalg.norm(positions_i - positions_j, axis=1)
-                logsum += np.sum(np.exp(-1 * self.gamma * (distances ** 2 - self.safe_dist**2)))
-            
-            s.append(states_i)
-            p.append(positions_i)
-
-        s = np.array(s)
-        p = np.array(p)
-
-        partials = []
-        for i in range(self.N):
-            states_i = s[i]
-            positions_i = p[i]
-
-            total_distances = 0
-            for j in range(i+1, self.N):
-                if j == i:
-                    continue
-                positions_j = p[j]
-                distances_to_obstacle = np.linalg.norm(positions_i - positions_j, axis=1)
-                total_distances += np.sum(distances_to_obstacle ** 2 - self.safe_dist**2)
-            
-            partial_smoothmin = np.exp(-1 * self.gamma * total_distances) / (logsum+EPS)
-            
-            partial_loss = 2 * np.linalg.norm(np.dot(g.T, states_i.T))
-            partial = np.multiply(partial_smoothmin, partial_loss)
-            partials.append(partial.flatten())
-
-        return partials
     
     ##########################################################
     # Fairness Notions
@@ -553,81 +369,6 @@ class Objective():
 
         return partials
     
-    ##########################################################
-    # Combined Avoidance Constraints
-    ###########################################################
-    
-    def _full_avoid_local(self, u, dyn='simple'):
-        control_input_size = self.control_input_size
-        u_reshape = u.reshape((self.N, self.H, control_input_size))
-        c = self.obstacles['center']
-        r = self.obstacles['radius']
-        
-        x = []
-        logsum = EPS
-        for i in range(self.N):
-            _, positions_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
-            positions_i = positions_i[1:]
-
-            distances_to_obstacle = np.linalg.norm(positions_i - c, axis=1)
-            logsum += np.sum(np.exp(-1 * self.gamma * (
-                distances_to_obstacle ** 2 - r**2
-                )))
-
-            for j in range(i, self.N):
-                _, positions_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
-                positions_j = positions_j[1:]
-            
-                inter_distances = np.linalg.norm(positions_i - positions_j, axis=1)
-                logsum += np.sum(np.exp(-1 * self.gamma * (inter_distances ** 2 - self.safe_dist**2)))
-            
-            x.append(positions_i)
-
-        x = np.array(x)
-
-        partials = []
-        for i in range(self.N):
-            positions_i = x[i]
-
-            distances_to_obstacle = np.linalg.norm(positions_i - c, axis=1)
-
-            total_distances = np.sum(np.exp(-1 * self.gamma * (distances_to_obstacle ** 2 - r**2)))
-            for j in range(i, self.N):
-                positions_j = x[j]
-                inter_distances = np.linalg.norm(positions_i - positions_j, axis=1)
-                total_distances += np.sum(inter_distances ** 2 - self.safe_dist**2)
-            
-            partial_smoothmin = np.exp(-1 * self.gamma * total_distances) / (logsum+EPS)
-            
-            if dyn == 'simple':
-                system_partial = 2 * np.ones_like(u_reshape[1])
-            else:
-                system_partial = 2 * self.dt * u_reshape[i]
-            p = np.multiply(partial_smoothmin * 2 * distances_to_obstacle, system_partial.T)
-            partials.append(p.flatten())
-
-        return partials
-    
-    def full_avoid_constraint(self, u):
-        control_input_size = self.control_input_size
-        u_reshape = u.reshape((self.N, self.H, control_input_size))
-        obstacle_center = self.obstacles['center']
-        obstacle_radius = self.obstacles['radius']
-        num_agents = len(self.init_states)
-        avoid = np.inf
-        for i in range(num_agents):
-            _, pos_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
-            final_pos = pos_i[len(pos_i)-1]
-            avoid = np.minimum(avoid, np.linalg.norm(final_pos - obstacle_center) - obstacle_radius)
-            pos_i = pos_i[1:]
-            for j in range(i+1,num_agents):
-                _, positions_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
-                positions_j = positions_j[1:]
-                distances = np.linalg.norm(pos_i - positions_j, axis=1)
-                min_distance = np.min(distances)
-                avoid = np.minimum(avoid, min_distance - self.safe_dist)
-        return avoid
-    
 
     ##########################################################
     # Check that Mission Successful after Solving
@@ -668,10 +409,10 @@ class Objective():
     
 
     ##########################################################
-    # Seed Solution (Obstacle Avoidance and Mutual Separation Only)
+    # Online Solution (Obstacle Avoidance and Mutual Separation Only)
     ###########################################################
 
-    def solve_nbf(self, seed_u=None, final_pos=None, mpc=False):
+    def solve_nbf(self, last_alpha=None, seed_u=None, mpc=False):
         # Centrally Solve for Obstacle Avoidance
         f = np.array([
             [1, 0, 0, self.dt, 0, 0],
@@ -718,7 +459,7 @@ class Objective():
         
         # Create Quad systems for each 
         robots = []
-        for r in range(self.N):
+        for r in range(self.N): 
             rob = self.system_model(self.init_states[r], dt=self.dt)
             robots.append(rob)
 
@@ -782,8 +523,8 @@ class Objective():
                 Brow = Brow_start + [2*(pos[0] - c[0]), 2*(pos[1] - c[1]), 2*(pos[2] - c[2]), 0, 0, 0] + Brow_end
                 B.append(Brow)
 
-                # reach goal  # TODO: CHANGE V TO INCLUDE RADIUS?
-                V = (pos[0] - cg[0])**2 + (pos[1] - cg[1])**2 + (pos[2] - cg[2])**2 #+ \
+                # reach goal
+                V = (pos[0] - cg[0])**2 + (pos[1] - cg[1])**2 + (pos[2] - cg[2])**2 - (rg/2)**2 #+ \
                     #   robots[r].state[3]**2 + robots[r].state[4]**2 + robots[r].state[5]**2
                 Vs.append(V)
                 # Vs.append(V**3)
@@ -811,7 +552,7 @@ class Objective():
 
             if self.N == 3:
                 V_alpha = 1
-                h_gamma = 2
+                h_gamma = 1
                 h_e = 1
             elif self.N == 5:
                 V_alpha = 1
@@ -851,11 +592,14 @@ class Objective():
                 Lgh2_u = np.dot(A, g_diag) @ u_t
                 constraints.append(Lfh2 + Lgh2_u + h_gamma*h_min**h_e >= 0) 
 
+            if last_alpha is not None:
+                constraints.append(alpha <= last_alpha)
+
             cbf_controller = cp.Problem(objective, constraints)
             cbf_controller.solve(solver=CP_SOLVER)
 
             if cbf_controller.status in ['infeasible', 'infeasible_inaccurate']:
-                # print(f"QP infeasible")
+                print(f"QP infeasible")
                 # cbf_controller.solve(solver=CP_SOLVER, verbose=True)
                 # print(cbf_controller)
                 return []
@@ -867,21 +611,71 @@ class Objective():
             final_u.append(u_t.value.reshape(self.N, self.control_input_size))
             if mpc:
                 break
-            # print(alpha.value)
-        return final_u, h_min, V_max
-    
-    ##########################################################
-    # Penalty Function for Online Solution
-    ###########################################################
+        return final_u, h_min, V_max, alpha.value[0]
+        
 
-    def penalty(self, x, grad=False):
-        alpha = 1.
-        if grad:
-            # grad p(x) = exp(ax)/(e^ax + 1)
-            return np.exp(alpha*x)/(np.exp(alpha*x) + 1)
+    ##########################################################
+    # Distributed Version of Online Solution (MPC only)
+    ###########################################################
+    def solve_distributed_nbf(self, seed_input, last_alpha):
+        pass
+    
+    def init_local_constraints(self, agent_id, seed_input, last_alpha, h_gamma=1):
+        # Calculate Target Position Coordinates Based on Seed Input
+        # Compute Error Dynamics
+        # Compute Auxiliary variables with for all other agents
+
+        # Calculate Target Position Coordinates Based on Seed Input
+        _, agent_target_pos = generate_agent_states(seed_input[agent_id], 
+                                              self.init_states[agent_id], 
+                                              self.init_pos[agent_id], 
+                                              self.system_model, dt=self.dt)
+
+        agent_actual_vel = self.init_states[agent_id][0:3]
+        agent_target_pos = agent_target_pos[0]
         
-        # p(x) = 1/smoothmax(0, x)
-        # smoothmax(x1, ..., xn) = 1/a ln (e^ax1 + ... + e^axn)
-        smax =  1/alpha * np.log(np.exp(alpha*x) + 1)
-        return 1/(smax + EPS)
+        # Compute Error Dynamics
+        agent_error_dyn = self.init_states[agent_id][0:3] - agent_target_pos
+
+        # Compute Auxiliary variables with for all other agents
+        gammas = []
+        for j in range(self.N):
+            _, target_pos = generate_agent_states(seed_input[agent_id], 
+                                                  self.init_states[agent_id], 
+                                                  self.init_pos[agent_id], 
+                                                  self.system_model, dt=self.dt)
+            actual_dist = self.init_pos[agent_id] - self.init_pos[j]
+            
+            neighbor_actual_vel = self.init_states[j][0:3]
+            neighbor_target_pos = target_pos[0]
+            neighbor_error_dyn = self.init_states[j][0:3] - neighbor_target_pos
+            # Compute Deltas
+            delta_p = agent_target_pos - neighbor_target_pos
+            delta_v = agent_actual_vel - neighbor_actual_vel
+            
+            # Compute tij 
+            hij = np.abs(agent_error_dyn - neighbor_error_dyn + delta_p) / self.safe_dist - 1
+            tij = 2/(self.dt**2) * h_gamma * hij + \
+                2/self.dt*(1/self.safe_dist*np.sign(actual_dist) * delta_v)
+            gammas.append(tij)
+
+        # TODO: append tij for static obstacles as well (delta_v is 0 and self.safe_dist == obstacle radius)
+        # TODO: append tij for the lyapunov function (similar to static obstacle case but negative because we want to go to target)
+
+        # TODO: BEFORE FORMULATING DECISION VECTOR, NEED TO SHARE THE GAMMAS BETWEEN AGENTS
+        # SO BELOW LINES GO TO ANOTHER FUNCTION (THE TRADES FUNCTION?)
+
+    def trades(self, agent_id, seed_input, Ai, bi, Ajs):
+        # Implement Algorithm 1 from paper 
+        # (but for horizon = 1, that is, returned ui for each agent is what they should do for next time step, 
+        # no future timesteps computed)
         
+        # Formulate decision vector ui
+        agent_input = cp.Variable(self.control_input_size)
+        Gamma = [np.array(gammas[j]).flatten() for j in range(self.N) if j != agent_id]
+        Gamma = np.array(Gamma).flatten()
+        n_p = Gamma.size
+        neighbor_inputs = cp.Parameter(n_p, value=Gamma)
+        ui = cp.hstack([agent_input, neighbor_inputs])
+
+        # TODO: Compute (8) for each agent pair ie Ai, Aj, bi
