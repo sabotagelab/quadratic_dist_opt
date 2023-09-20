@@ -37,6 +37,44 @@ class Objective():
         self.stop = [0 for i in range(self.N)]
         self.notion = notion
 
+        f = np.array([
+            [1, 0, 0, self.dt, 0, 0],
+            [0, 1, 0, 0, self.dt, 0],
+            [0, 0, 1, 0, 0, self.dt],
+            [0, 0, 0, 1, 0, 0],
+            [0, 0, 0, 0, 1, 0],
+            [0, 0, 0, 0, 0, 1]])
+        self.f = f
+        f_diag = []
+        for i in range(self.N):
+            f_diag_list = []
+            for j in range(self.N):
+                if i == j:
+                    f_diag_list.append(f)
+                else:
+                    f_diag_list.append(np.zeros((6, 6)))
+            f_diag.append(f_diag_list)
+        self.f_diag = np.block(f_diag)
+
+        g = np.array([
+            [0.5*self.dt**2, 0, 0],
+            [0, 0.5*self.dt**2, 0],
+            [0, 0, 0.5*self.dt**2],
+            [self.dt, 0, 0],
+            [0, self.dt, 0],
+            [0, 0, self.dt]])
+        self.g = g
+        g_diag = []
+        for i in range(self.N):
+            g_diag_list = []
+            for j in range(self.N):
+                if i == j:
+                    g_diag_list.append(g)
+                else:
+                    g_diag_list.append(np.zeros_like(g))
+            g_diag.append(g_diag_list)
+        self.g_diag = np.block(g_diag)
+
     ##########################################################
     # Distributed Formulation
     ###########################################################
@@ -414,40 +452,9 @@ class Objective():
 
     def solve_nbf(self, last_alpha=None, seed_u=None, mpc=False):
         # Centrally Solve for Obstacle Avoidance
-        f = np.array([
-            [1, 0, 0, self.dt, 0, 0],
-            [0, 1, 0, 0, self.dt, 0],
-            [0, 0, 1, 0, 0, self.dt],
-            [0, 0, 0, 1, 0, 0],
-            [0, 0, 0, 0, 1, 0],
-            [0, 0, 0, 0, 0, 1]])
-        f_diag = []
-        for i in range(self.N):
-            f_diag_list = []
-            for j in range(self.N):
-                if i == j:
-                    f_diag_list.append(f)
-                else:
-                    f_diag_list.append(np.zeros((6, 6)))
-            f_diag.append(f_diag_list)
-        f_diag = np.block(f_diag)
-        g = np.array([
-            [0.5*self.dt**2, 0, 0],
-            [0, 0.5*self.dt**2, 0],
-            [0, 0, 0.5*self.dt**2],
-            [self.dt, 0, 0],
-            [0, self.dt, 0],
-            [0, 0, self.dt]])
-        g_diag = []
-        for i in range(self.N):
-            g_diag_list = []
-            for j in range(self.N):
-                if i == j:
-                    g_diag_list.append(g)
-                else:
-                    g_diag_list.append(np.zeros_like(g))
-            g_diag.append(g_diag_list)
-        g_diag = np.block(g_diag)
+        f = self.f
+        f_diag = self.f_diag
+        g_diag = self.g_diag
         
         c = self.obstacles['center']
         r = self.obstacles['radius']
@@ -595,6 +602,10 @@ class Objective():
             if last_alpha is not None:
                 constraints.append(alpha <= last_alpha)
 
+            # Ubox constraint
+            constraints.append(-1 * self.Ubox <= u_t)
+            constraints.append(u_t <= self.Ubox)
+
             cbf_controller = cp.Problem(objective, constraints)
             cbf_controller.solve(solver=CP_SOLVER)
 
@@ -617,65 +628,220 @@ class Objective():
     ##########################################################
     # Distributed Version of Online Solution (MPC only)
     ###########################################################
-    def solve_distributed_nbf(self, seed_input, last_alpha):
-        pass
+    def solve_distributed_nbf(self, seed_input, last_alphas, h_gamma=1, h_e=1, v_gamma=1, v_e=1):
+
+        # Keep only first time step of seed_input
+        seed_input = seed_input[:, 0, :]
+
+        # CALCULATE TARGET POSITIONS FOR ALL AGENTS BASED ON SEED INPUT
+        agent_target_pos = []
+        for i in range(self.N):
+            _, target_pos = generate_agent_states(seed_input[i], self.init_states[i], self.init_pos[i], 
+                                                  self.system_model, dt=self.dt)
+            agent_target_pos.append(target_pos[0])
+        
+        # INTIALIZE LOCAL CONSTRAINTS
+        agent_gammas = []
+        agent_Ais = []
+        agent_bis = []
+        for i in range(self.N):
+            if last_alphas is not None:
+                g, Ai, bi = self.init_local_constraints(i, agent_target_pos, last_alphas[i], h_gamma=1, h_e=1, v_gamma=1, v_e=1)
+            else:
+                g, Ai, bi = self.init_local_constraints(i, agent_target_pos, None, h_gamma=1, h_e=1, v_gamma=1, v_e=1)
+            agent_gammas.append(g)
+            agent_Ais.append(Ai)
+            agent_bis.append(bi)
+        
+        m = Ai.shape[0]
+        # SHARE GAMMAS and Ais BETWEEN AGENTS TO DO THE TRADES ALGORITHM
+        uis = np.copy(seed_input)
+        lambdas = [np.ones(m) for i in range(self.N)]
+        zis = [0 for i in range(self.N)]
+        yis = [0 for i in range(self.N)]
+
+        # TODO: repeat below until convergence, auxiliary variables in ui will converge to match the neighbors control inputs in all ujs
+        phi, agent_phi_i = self.trades_phi(uis, agent_target_pos, grad=False, return_all=True)  # lowercase phi
+        for i in range(self.N):
+            ui_p, lambda_p, zi_p, yi_p = self.trades(i, uis, seed_input, agent_target_pos[i], agent_gammas, agent_Ais, agent_bis, agent_phi_i, lambdas, zis, yis)
+            # update uis, lambdas, zis, yis
+
     
-    def init_local_constraints(self, agent_id, seed_input, last_alpha, h_gamma=1):
+    def init_local_constraints(self, agent_id, target_poses, last_alpha, h_gamma=1, h_e=1, v_gamma=1, v_e=1):
         # Calculate Target Position Coordinates Based on Seed Input
         # Compute Error Dynamics
         # Compute Auxiliary variables with for all other agents
 
-        # Calculate Target Position Coordinates Based on Seed Input
-        _, agent_target_pos = generate_agent_states(seed_input[agent_id], 
-                                              self.init_states[agent_id], 
-                                              self.init_pos[agent_id], 
-                                              self.system_model, dt=self.dt)
-
+        # Get Target Position Coordinates Based on Seed Input
         agent_actual_vel = self.init_states[agent_id][0:3]
-        agent_target_pos = agent_target_pos[0]
+        agent_target_pos = target_poses[agent_id][0]
         
         # Compute Error Dynamics
         agent_error_dyn = self.init_states[agent_id][0:3] - agent_target_pos
 
         # Compute Auxiliary variables with for all other agents
         gammas = []
+        Ai = []
         for j in range(self.N):
-            _, target_pos = generate_agent_states(seed_input[agent_id], 
-                                                  self.init_states[agent_id], 
-                                                  self.init_pos[agent_id], 
-                                                  self.system_model, dt=self.dt)
+            if j == agent_id:
+                continue
             actual_dist = self.init_pos[agent_id] - self.init_pos[j]
             
             neighbor_actual_vel = self.init_states[j][0:3]
-            neighbor_target_pos = target_pos[0]
+            neighbor_target_pos = target_poses[j][0]
             neighbor_error_dyn = self.init_states[j][0:3] - neighbor_target_pos
             # Compute Deltas
             delta_p = agent_target_pos - neighbor_target_pos
             delta_v = agent_actual_vel - neighbor_actual_vel
             
             # Compute tij 
-            hij = np.abs(agent_error_dyn - neighbor_error_dyn + delta_p) / self.safe_dist - 1
-            tij = 2/(self.dt**2) * h_gamma * hij + \
-                2/self.dt*(1/self.safe_dist*np.sign(actual_dist) * delta_v)
+            hij = np.sum(np.abs(agent_error_dyn - neighbor_error_dyn + delta_p) / self.safe_dist - 1)
+            tij = 2/(self.dt**2) * h_gamma * (hij**h_e) + \
+                2/self.dt*(1/self.safe_dist*np.sum(np.sign(actual_dist) * delta_v))
             gammas.append(tij)
+            Ai.append(-1 * np.sign(actual_dist))
 
-        # TODO: append tij for static obstacles as well (delta_v is 0 and self.safe_dist == obstacle radius)
-        # TODO: append tij for the lyapunov function (similar to static obstacle case but negative because we want to go to target)
+        # append tij for static obstacles as well (delta_v is 0 and self.safe_dist == obstacle radius)
+        obj_actual_dist = self.init_pos[agent_id] - self.obstacles['center']
+        delta_obj_p = agent_target_pos - self.obstacles['center']
+        hi_obj = np.sum(np.abs(agent_error_dyn + delta_obj_p) / self.obstacles['radius'] - 1)
+        ti_obj = 2/(self.dt**2) * h_gamma * (hi_obj**h_e) + \
+            2/self.dt*(1/self.obstacles['radius']*np.sum(np.sign(obj_actual_dist) * agent_actual_vel))
+        gammas.append(ti_obj)
+        Ai.append(-1 * np.sign(obj_actual_dist))
+        
+        # append tij for the lyapunov function (similar to static obstacle case but negative because we want to go to target)
+        target_actual_dist = self.init_pos[agent_id] - self.target['center']
+        delta_target_p = agent_target_pos - self.target['center']
+        if last_alpha is not None:
+            vi_target = -1 * np.sum((np.abs(agent_error_dyn + delta_target_p) / self.target['radius'] - 1 - last_alpha))
+        else:
+            vi_target = -1 * np.sum((np.abs(agent_error_dyn + delta_target_p) / self.target['radius'] - 1))
+        ti_target = 2/(self.dt**2) * v_gamma * (vi_target**v_e) + \
+            2/self.dt*(1/self.target['radius']*np.sum(np.sign(target_actual_dist) * agent_actual_vel))
+        gammas.append(ti_target)
+        Ai.append(np.sign(target_actual_dist))
 
-        # TODO: BEFORE FORMULATING DECISION VECTOR, NEED TO SHARE THE GAMMAS BETWEEN AGENTS
-        # SO BELOW LINES GO TO ANOTHER FUNCTION (THE TRADES FUNCTION?)
+        Ai = np.array(Ai)
+        
+        n_p = np.array(gammas).size
+        Ai = np.append(Ai, np.ones((Ai.shape[0], 1)), axis=1)
+        Ai = np.append(Ai, np.zeros((Ai.shape[0], n_p - 1)), axis=1)
+        bi = np.zeros((Ai.shape[0], 1))
 
-    def trades(self, agent_id, seed_input, Ai, bi, Ajs):
+        return gammas, Ai, bi
+
+    def trades(self, agent_id, current_inputs, seed_input, agent_target_pos, agent_gammas, Ais, bis, phi,
+               lambdas, zis, yis, step_size=0.01, trade_param=0.8):
         # Implement Algorithm 1 from paper 
         # (but for horizon = 1, that is, returned ui for each agent is what they should do for next time step, 
         # no future timesteps computed)
-        
-        # Formulate decision vector ui
-        agent_input = cp.Variable(self.control_input_size)
-        Gamma = [np.array(gammas[j]).flatten() for j in range(self.N) if j != agent_id]
-        Gamma = np.array(Gamma).flatten()
-        n_p = Gamma.size
-        neighbor_inputs = cp.Parameter(n_p, value=Gamma)
-        ui = cp.hstack([agent_input, neighbor_inputs])
 
-        # TODO: Compute (8) for each agent pair ie Ai, Aj, bi
+        # let network parameter wij be 1/N-1 (ie one over all neighbors) for all neighbors
+        wij = 1 / (self.N - 1)
+        rho = 1.1 * step_size * trade_param / wij
+
+        ui = current_inputs[agent_id]
+        
+        # TODO: remove gammas from function and MOVE the ui_full creation to outside, let F_i just take the subset of ui
+        # the now to create full decision variable (append the auxiliary variables)
+        aux_vars = agent_gammas[agent_id]
+        ui_full = np.hstack([ui, aux_vars])
+
+        F_i = self.trades_F_i(agent_id, ui_full[0:3], seed_input[agent_id], agent_target_pos, phi[agent_id] + zis[agent_id])
+        G_ui = self.trades_G_i_primal(ui_full, Ais[agent_id], bis[agent_id] + yis[agent_id], lambdas[agent_id], rho)
+        G_lambi = self.trades_G_i_primal(ui_full, Ais[agent_id], bis[agent_id] + yis[agent_id], lambdas[agent_id], rho)
+        ui_p = ui_full + trade_param * (self.projection(ui_full - step_size * F_i - step_size * G_ui) - ui_full)
+        lambda_p = 0
+        zi_p = 0
+        yi_p = 0
+        for i in range(self.N):
+            if i == agent_id:
+                continue
+            uj = current_inputs[i]
+            uj_full = np.hstack([uj, agent_gammas[i]])
+            lambda_p += wij * lambdas[i] + trade_param * step_size * G_lambi
+            zi_p += wij * zis[i] + wij * phi[i]
+            yi_p += wij * yis[i] + wij * self.N * (np.dot(Ais[i], uj_full) - bis[i]) 
+
+        zi_p = zi_p - phi[agent_id]
+        yi_p = yi_p - self.N * (np.dot(Ais[i], ui_full) - bis[i]) 
+        return ui_p, lambda_p, zi_p, yi_p
+
+
+
+    def trades_phi_i(self, agent_id, agent_proposed_input, agent_target_pos, grad=False):
+        # small_phi_i penalizes the agent's fraction of aggregate distance to target position for this timestep
+        _, actual_new_pos = generate_agent_states(agent_proposed_input, 
+                                                  self.init_states[agent_id], 
+                                                  self.init_pos[agent_id], 
+                                                  self.system_model, dt=self.dt)
+        actual_new_pos = actual_new_pos[0]
+        if grad:
+            # return 2 * np.linalg.norm(actual_new_pos - agent_target_pos) * np.dot(self.g.T, self.init_states[agent_id].T)
+            return 2 * np.linalg.norm(actual_new_pos - agent_target_pos) * np.linalg.norm(np.dot(self.g.T, self.init_states[agent_id].T))
+        else:
+            return np.linalg.norm(actual_new_pos - agent_target_pos)**2
+        
+    def trades_phi(self, proposed_inputs, target_positions, grad=False, return_all=False):
+        if grad:
+            partials = []
+            for i in range(self.N):
+                partials.append(1/self.N * self.trades_phi_i(i, proposed_inputs[i], target_positions[i], grad=True))
+            return partials
+        else:
+            total_phi_i = 0
+            all_phis = []
+            for i in range(self.N):
+                phi_i = self.trades_phi_i(i, proposed_inputs[i], target_positions[i], grad=False)
+                total_phi_i += phi_i
+                all_phis.append(phi_i)
+            if not return_all:
+                return 1/self.N * total_phi_i
+            else:
+                return 1/self.N * total_phi_i, all_phis
+
+    def trades_J_i(self, agent_proposed_input, agent_seed_input, phi, grad=False):
+        # OBJECTIVE FUNCTION, MINIMIZE DISTANCE TO SEED_INPUTS (THE FAIR INPUTS)
+        if grad:
+            partial_1 = 2 * np.linalg.norm(agent_proposed_input - agent_seed_input) + phi  # here phi is partial of phi for agent i
+            partial_2 = 1
+            return partial_1, partial_2
+        else:
+            return np.linalg.norm(agent_proposed_input - agent_seed_input)**2 + phi
+        
+    def trades_F_i(self, agent_id, agent_proposed_input, agent_seed_input, agent_target_pos, phi):
+        # pseudo gradient of J_i
+        partial_1_J_i, partial_2_j_i = self.trades_J_i(agent_proposed_input, agent_seed_input, phi, grad=True)  # here phi is partial of phi for agent i
+        partial_phi_i = self.trades_phi_i(agent_id, agent_proposed_input, agent_target_pos, grad=True)
+        return partial_1_J_i + (partial_phi_i / self.N) * partial_2_j_i
+
+    def trades_G_i_primal(self, agent_proposed_input, Ai, bi, lambda_i, rho):
+        # primal psuedo gradient of constraints
+        m = Ai.shape[0]
+        s1 = self.N * (np.dot(Ai, agent_proposed_input) - bi)
+        s2 = lambda_i
+
+        res = 0
+        for i in range(m):
+            res += np.maximum(np.dot(rho * s1[i] + s2[i], Ai.T[i]), 0)
+        
+        return res
+
+    def trades_G_i_dual(self, agent_proposed_input, Ai, bi, lambda_i, rho):
+        # dual psuedo gradient of constraints
+        e = Ai.T
+        m = Ai.shape[0]
+
+        s1 = self.N * (np.dot(Ai, agent_proposed_input) - bi)
+        s2 = lambda_i
+
+        res = 0
+        for i in range(m):
+            res += np.maximum(np.dot(rho * s1[i] + s2[i], e[i]) - s2[i], - s2[i])
+        return
+
+
+    def projection(self, v):
+        # TODO: project v into Ubox
+        return v

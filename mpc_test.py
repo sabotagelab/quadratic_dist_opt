@@ -212,8 +212,9 @@ for t in range(trials):
             trial_error = True
             break
 
-        # TESTING LOCAL NBF
-        obj.local_nbf(0, seed_u, last_alpha, h_gamma=1)
+        # TESTING DIST NBF STUFF
+        # obj.init_local_constraints(0, seed_u, last_alpha, h_gamma=1)
+        obj.solve_distributed_nbf(seed_u, None)
         
         Tbar = Tf - (H-Hbar)*Tf/H
 
