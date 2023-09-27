@@ -116,6 +116,8 @@ class Quadrocopter():
         self.dt = dt
 
     def forward(self, u):
+        # replace nans with 0s
+        u[np.isnan(u)] = 0
         t = self.dt
         pos = self.state[0:3]
         velo = self.state[3:6]

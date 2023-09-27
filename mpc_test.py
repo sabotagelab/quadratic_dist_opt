@@ -55,10 +55,10 @@ kappa = args.kappa   # parameter for weighting change in epsilon for local probl
 eps_bounds = args.eps_bounds  # bounds for eps in an iteration
 
 ro = args.ro  # radius of circle
-co = np.array([args.co, args.co, args.co])  # center of circle
+co = np.array([args.co, args.co, 0])  # center of circle
 rg = args.rg
 cg = np.array([args.cg, args.cg, 0])
-obstacles = {'center': co, 'radius': ro}
+obstacles = {'center': co, 'radius': ro+1}
 target = {'center': cg, 'radius': rg}
 Ubox = args.Ubox  # box constraint
 safe_dist = args.sd
@@ -117,7 +117,13 @@ for t in range(trials):
         rob = system_model(init_states[r], dt=dt)
         robots.append(rob)
 
-    # GENERATE INITIAL "CONTROL INPUTS" AND TRAJECTORIES
+    # JUST FOR TESTING MARGELLOS IMPLEMENTATION
+    test_robots = []
+    for r in range(N):
+        rob = system_model(init_states[r], dt=dt)
+        test_robots.append(rob)
+
+    # DO RECEDING HORIZON CONTROL
     Tbar = Tf
     final_us = []
     final_trajectories = [init_pos]
@@ -125,6 +131,7 @@ for t in range(trials):
     cbf_values = []
     last_alpha = None
     for Hbar in range(H, 0, -1):
+        # GENERATE INITIAL "CONTROL INPUTS" AND TRAJECTORIES
         init_u = []
         init_traj = []
         for i in range(N):
@@ -164,6 +171,7 @@ for t in range(trials):
         n = N*Hbar*control_input_size
         Q = np.random.randn(n, n)   # variable for quadratic objective
         Q = Q.T @ Q
+        # seed_u = init_u  # COMMENTING OUT FAIRNESS FOR TESTING MARGELLOS IMPLEMENTATION
         obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=args.sd)
         obj.solo_energies = solo_energies
         obj.with_safety = False
@@ -190,10 +198,7 @@ for t in range(trials):
             print(e)
             print('Fair Planner error at time {}'.format(H-Hbar))
             # use previous fair trajectory input instead of solo trajectory input if possible
-            if Hbar == H:
-                seed_u = init_u  # TODO: change to 
-            else:
-                seed_u = seed_u[:,1:,:]
+            seed_u = seed_u[:,1:,:]        
             fair_planner_solver_errors += 1
 
         obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=args.sd)
@@ -205,16 +210,18 @@ for t in range(trials):
             cbf_values.append(cbf_value)
             clf_values.append(clf_value)
             last_alpha = nbf_alpha
+
+            # TESTING DIST NBF STUFF
+            # test_uis = obj.solve_distributed_nbf(seed_u, last_alpha)
+            # final_u = test_uis[:,0:3]
+            # last_alpha = np.max(test_uis[:,3])
+            
         except Exception as e:
             print(e)
             print('Cant find next step in trajectory at time {}'.format(H-Hbar))
             nbf_solver_errors += 1
             trial_error = True
             break
-
-        # TESTING DIST NBF STUFF
-        # obj.init_local_constraints(0, seed_u, last_alpha, h_gamma=1)
-        obj.solve_distributed_nbf(seed_u, None)
         
         Tbar = Tf - (H-Hbar)*Tf/H
 
@@ -222,11 +229,12 @@ for t in range(trials):
         new_states = []
         new_poses = []
         for r in range(N):
-            # new_state, new_pos = robots[r].forward(init_u[r][0])
             new_state, new_pos = robots[r].forward(final_u[r][0])
+            # new_state, new_pos = robots[r].forward(final_u[r])  # TESTING DIST NBF STUFF
             new_states.append(new_state)
             new_poses.append(new_pos)
             new_us.append(final_u[r][0])
+            # new_us.append(final_u[r]) # TESTING DIST NBF STUFF
         final_us.append(new_us)
         final_trajectories.append(new_poses)
         init_states = new_states
@@ -276,27 +284,28 @@ for t in range(trials):
     else:
         misses_goal += 1
         print('Missed Goal')
-        print('Figure Final Trajectories')
-        fig = plt.figure()
-        ax = fig.add_subplot(projection='3d')
-        times = np.linspace(0, Tf, H)
-        for i in range(N):
-            traj = final_trajectories[i]
-            ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
-            ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
-        obs_sphere = Sphere([co[0], co[1], co[2]], ro)
-        obs_sphere.plot_3d(ax, alpha=0.2, color='red')
-        goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
-        goal_sphere.plot_3d(ax, alpha=0.2, color='green')
-        plt.show()
+    
+    print('Figure Final Trajectories')
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+    times = np.linspace(0, Tf, H)
+    for i in range(N):
+        traj = final_trajectories[i]
+        ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
+        ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
+    obs_sphere = Sphere([co[0], co[1], co[2]], ro)
+    obs_sphere.plot_3d(ax, alpha=0.2, color='red')
+    goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
+    goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+    plt.show()
 
-        print("Figure CLF and CBF Values")
-        fig, axs = plt.subplots(2)
-        axs[0].plot(list(range(len(cbf_values))), cbf_values)
-        axs[0].set_title('h_min')
-        axs[1].plot(list(range(len(clf_values))), clf_values)
-        axs[1].set_title('V_max')
-        plt.show()
+    print("Figure CLF and CBF Values")
+    fig, axs = plt.subplots(2)
+    axs[0].plot(list(range(len(cbf_values))), cbf_values)
+    axs[0].set_title('h_min')
+    axs[1].plot(list(range(len(clf_values))), clf_values)
+    axs[1].set_title('V_max')
+    plt.show()
 
 print('Successful Trials {}'.format(successful_trials))
 print('Hit Obstacle {}'.format(collide_with_obstacle))
