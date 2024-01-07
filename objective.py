@@ -413,37 +413,78 @@ class Objective():
     ###########################################################
 
     def check_avoid_constraints(self, u, avoid_only=False):
+        drone_results = []
+        for i in range(self.N):
+            drone_res = self.check_avoid_constraints_traj(u, i, avoid_only=avoid_only)
+            drone_results.append(drone_res)
+        return drone_results
+        
+        # control_input_size = self.control_input_size
+        # u_reshape = u.reshape((self.N, self.H, control_input_size))
+
+        # # Check That All agents avoid Obstacle AND REACH GOAL
+        # c = self.obstacles['center']
+        # r = self.obstacles['radius']
+        # cg = self.target['center']
+        # rg = self.target['radius']
+        # for i in range(self.N):
+        #     _, positions = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
+        #     final_p = positions[self.H]
+        #     positions = positions[1:]
+        #     distances_to_obstacle = np.linalg.norm(positions - c, axis=1) + 0.001
+        #     if any(distances_to_obstacle < (r-1)):
+        #         return 1
+        #     if not avoid_only:
+        #         distance_to_target = np.linalg.norm(final_p - cg) - 0.001
+        #         if distance_to_target > rg:
+        #             return 3
+
+        # # Check Collision Avoidance
+        # for i in range(self.N):
+        #     _, positions_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
+        #     positions_i = positions_i[1:]
+        #     for j in range(i+1, self.N):
+        #         _, positions_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
+        #         positions_j = positions_j[1:]
+        #         distances_to_obstacle = np.linalg.norm(positions_i - positions_j, axis=1) + 0.001
+        #         if any(distances_to_obstacle < self.safe_dist):
+        #             return 2
+        # return 0
+    
+    def check_avoid_constraints_traj(self, u, drone_id, avoid_only=False):
+        # return for a single drone
         control_input_size = self.control_input_size
         u_reshape = u.reshape((self.N, self.H, control_input_size))
 
-        # Check That All agents avoid Obstacle AND REACH GOAL
         c = self.obstacles['center']
         r = self.obstacles['radius']
         cg = self.target['center']
         rg = self.target['radius']
-        for i in range(self.N):
-            _, positions = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
-            final_p = positions[self.H]
-            positions = positions[1:]
-            distances_to_obstacle = np.linalg.norm(positions - c, axis=1) + 0.001
-            if any(distances_to_obstacle < (r-1)):
-                return 1
+        
+        drone_hit_reach = 0
+        _, positions = generate_agent_states(u_reshape[drone_id], self.init_states[drone_id], self.init_pos[drone_id], model=self.system_model, dt=self.dt)
+        final_p = positions[self.H]
+        positions = positions[1:]
+        distances_to_obstacle = np.linalg.norm(positions - c, axis=1) + 0.001
+        if any(distances_to_obstacle < (r-1)):
+            drone_hit_reach = 1
+        else:
             if not avoid_only:
                 distance_to_target = np.linalg.norm(final_p - cg) - 0.001
                 if distance_to_target > rg:
-                    return 3
+                    drone_hit_reach = 3
 
-        # Check Collision Avoidance
-        for i in range(self.N):
-            _, positions_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
-            positions_i = positions_i[1:]
-            for j in range(i+1, self.N):
-                _, positions_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
-                positions_j = positions_j[1:]
-                distances_to_obstacle = np.linalg.norm(positions_i - positions_j, axis=1) + 0.001
-                if any(distances_to_obstacle < self.safe_dist):
-                    return 2
-        return 0
+        positions_i = positions
+        drone_collide = 0
+        for j in range(drone_id+1, self.N):
+            _, positions_j = generate_agent_states(u_reshape[j], self.init_states[j], self.init_pos[j], model=self.system_model, dt=self.dt)
+            positions_j = positions_j[1:]
+            distances_to_obstacle = np.linalg.norm(positions_i - positions_j, axis=1) + 0.001
+            if any(distances_to_obstacle < self.safe_dist):
+                drone_collide = 2
+                continue
+        return max(drone_hit_reach, drone_collide)
+                       
     
 
     ##########################################################
@@ -522,8 +563,8 @@ class Objective():
                 # obstacle avoidance
                 pos = robots[r].state[0:3]
                 h_o = (pos[0] - c[0])**2 + (pos[1] - c[1])**2 + (pos[2] - c[2])**2 - r**2
-                # h_os.append(1*h_o**3)
-                h_os.append(h_o)
+                h_os.append(1*h_o**3)
+                # h_os.append(h_o)
                 h_o_min = np.min([h_o_min, h_o])
                 Brow_start = [0 for i in range(r*6)]
                 Brow_end = [0 for i in range((r+1)*6, self.N*6)]
@@ -546,8 +587,8 @@ class Objective():
                 for s in range(r+1, self.N):
                     pos1 = robots[s].state[0:3]
                     h_c = (pos[0] - pos1[0])**2 + (pos[1] - pos1[1])**2 + (pos[2] - pos1[2])**2 - self.safe_dist**2
-                    # h_cs.append(1*h_c**3)
-                    h_cs.append(h_c)
+                    h_cs.append(1*h_c**3)
+                    # h_cs.append(h_c)
                     h_c_min = np.min([h_c_min, h_c])
                     deriv = [2*(pos[0] - pos1[0]), 2*(pos[1] - pos1[1]), 2*(pos[2] - pos1[2]), 0, 0, 0]
                     nderiv = [-2*(pos[0] - pos1[0]), -2*(pos[1] - pos1[1]), -2*(pos[2] - pos1[2]), 0, 0, 0]
@@ -559,7 +600,7 @@ class Objective():
 
             if self.N == 3:
                 V_alpha = 1
-                h_gamma = 1
+                h_gamma = 10
                 h_e = 1
             elif self.N == 5:
                 V_alpha = 1
@@ -600,6 +641,7 @@ class Objective():
                 constraints.append(Lfh2 + Lgh2_u + h_gamma*h_min**h_e >= 0) 
 
             if last_alpha is not None:
+                last_alpha = max(0, last_alpha)  # don't let last alpha be negative ?
                 constraints.append(alpha <= last_alpha)
 
             # Ubox constraint
@@ -731,42 +773,65 @@ class Objective():
             delta_v = agent_actual_vel - neighbor_actual_vel
             
             # Compute tij 
+            ## ABS BARRIER FUNC
             hij = np.sum(np.abs(agent_error_dyn - neighbor_error_dyn + delta_p) / self.safe_dist - 1)
             tij = 2/(self.dt**2) * h_gamma * (hij**h_e) + \
                 2/self.dt*(1/self.safe_dist*np.sum(np.sign(actual_dist) * delta_v))
+            ## NORM BARRIER FUNC
+            # hij = np.linalg.norm(agent_error_dyn - neighbor_error_dyn + delta_p)**2 - self.safe_dist**2
+            # tij = 2/(self.dt**2) * h_gamma * (hij**h_e) + \
+            #     2/self.dt*(np.sum(2 * actual_dist * delta_v))
             gammas.append(tij)
             Ai.append(-1 * np.sign(actual_dist))
+            # Ai.append(-1 * 2 * actual_dist)
 
         # append tij for static obstacles as well (delta_v is 0 and self.safe_dist == obstacle radius)
         obj_actual_dist = self.init_pos[agent_id] - self.obstacles['center']
         delta_obj_p = agent_target_pos - self.obstacles['center']
+        ## ABS BARRIER FUNC
         hi_obj = np.sum(np.abs(agent_error_dyn + delta_obj_p) / self.obstacles['radius'] - 1)
         ti_obj = 2/(self.dt**2) * h_gamma * (hi_obj**h_e) + \
             2/self.dt*(1/self.obstacles['radius']*np.sum(np.sign(obj_actual_dist) * agent_actual_vel))
+        ## NORM BARRIER FUNC
+        hi_obj = np.linalg.norm(agent_error_dyn + delta_obj_p)**2 - self.obstacles['radius']**2
+        ti_obj = 2/(self.dt**2) * h_gamma * (hi_obj**h_e) + \
+            2/self.dt*(np.sum(2 * obj_actual_dist * agent_actual_vel))
         gammas.append(ti_obj)
         Ai.append(-1 * np.sign(obj_actual_dist))
+        # Ai.append(-1 * 2 * obj_actual_dist)
         
         # append tij for the lyapunov function (similar to static obstacle case but negative because we want to go to target)
         target_actual_dist = self.init_pos[agent_id] - self.target['center']
         delta_target_p = agent_target_pos - self.target['center']
+        ## ABS BARRIER FUNC
         vi_target = -1 * np.sum((np.abs(agent_error_dyn + delta_target_p) / self.target['radius'] - 1))
         ti_target = 2/(self.dt**2) * v_gamma * (vi_target**v_e) + \
             2/self.dt*(1/self.target['radius']*np.sum(np.sign(target_actual_dist) * agent_actual_vel))
+        ## NORM BARRIER FUNC
+        # vi_target = -1 * (np.linalg.norm(agent_error_dyn + delta_target_p)**2 - self.target['radius']**2)
+        # ti_target = 2/(self.dt**2) * v_gamma * (vi_target**v_e) + \
+        #     2/self.dt*(np.sum(2 * target_actual_dist * agent_actual_vel))
         gammas.append(ti_target)
         Ai.append(np.sign(target_actual_dist))
+        # Ai.append(2 * target_actual_dist)
 
         Ai = np.array(Ai)
         
         n_p = np.array(gammas).size
         
         alpha_col = np.zeros((Ai.shape[0], 1))
-        alpha_col[3] = -1
-        Ai = np.append(Ai, alpha_col, axis=1)  # for alpha variable
+        # alpha_col[3] = -1
+        alpha_col[self.N] = 1 #-1
+        Ai = np.append(Ai, alpha_col, axis=1)  # for alpha decision variable (but I actually mean the delta decision variable from outer problem)
         Ai = np.append(Ai, -1 * np.ones((Ai.shape[0], 1)), axis=1)
         Ai = np.append(Ai, np.zeros((Ai.shape[0], n_p - 1)), axis=1)
         bi = np.zeros((Ai.shape[0], 1))
         if last_alpha is not None:
-            bi[3] = last_alpha
+            last_alpha = max(0, last_alpha)  # don't let last alpha be negative ?
+            # bi[3] = last_alpha
+            bi[self.N] = last_alpha
+            
+
 
         return gammas, Ai, bi
 

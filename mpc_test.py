@@ -3,6 +3,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.art3d as art3d
 import numpy as np
+import os
 from skspatial.objects import Sphere
 
 from objective import Objective
@@ -14,15 +15,16 @@ import time
 
 
 EPS = 1e-2
-np.random.seed(43)
+np.random.seed(44)
 
 parser = argparse.ArgumentParser(description='Optimization')
 # MAIN VARIABLES
 parser.add_argument('--results_file', type=str, default='test')
 parser.add_argument('--N', type=int, default=3)
-parser.add_argument('--H', type=int, default=7)
+parser.add_argument('--H', type=int, default=12)
 parser.add_argument('--trials', type=int, default=1)
 parser.add_argument('--notion', type=int, default=0)
+parser.add_argument('--dist', action='store_true')
 
 
 # THESE MAY CHANGE (BUT IDEALLY NOT)
@@ -30,12 +32,12 @@ parser.add_argument('--alpha', type=float, default=.001)
 parser.add_argument('--beta', type=float, default=1)
 parser.add_argument('--gamma', type=float, default=1.)
 parser.add_argument('--kappa', type=float, default=500)
-parser.add_argument('--eps_bounds', type=float, default=25)
+parser.add_argument('--eps_bounds', type=float, default=100)
    
 
 # TRY NOT TO CHANGE THESE
-parser.add_argument('--ro', type=float, default=1)
-parser.add_argument('--co', type=float, default=-4)
+parser.add_argument('--ro', type=float, default=1.25)
+parser.add_argument('--co', type=float, default=-2)
 parser.add_argument('--rg', type=float, default=5)
 parser.add_argument('--cg', type=float, default=5)
 parser.add_argument('--Ubox', type=float, default=300)
@@ -55,7 +57,8 @@ kappa = args.kappa   # parameter for weighting change in epsilon for local probl
 eps_bounds = args.eps_bounds  # bounds for eps in an iteration
 
 ro = args.ro  # radius of circle
-co = np.array([args.co, args.co, 0])  # center of circle
+# co = np.array([args.co, args.co, 0])  # center of circle
+co = np.array([0, args.co, 0])  # center of circle
 rg = args.rg
 cg = np.array([args.cg, args.cg, 0])
 obstacles = {'center': co, 'radius': ro+1}
@@ -63,6 +66,7 @@ target = {'center': cg, 'radius': rg}
 Ubox = args.Ubox  # box constraint
 safe_dist = args.sd
 notion = args.notion  # NOTION SHOULD ALWAYS BE 2
+dist_nbf = args.dist
 
 H = args.H
 
@@ -84,6 +88,9 @@ misses_goal = 0
 # SET INITIAL POSITIONS AND STATES
 for t in range(trials):
     print('Trial {}'.format(t))
+    trial_dir = 'test_results/trial{}'.format(t)
+    if not os.path.exists(trial_dir):
+        os.mkdir(trial_dir)
     trial_error = False
     if N >= 10:
         # x = np.random.uniform(low=-3, high=0, size=1)[0]
@@ -95,7 +102,8 @@ for t in range(trials):
     init_states = []
     for i in range(N):
         if N < 10:
-            x = np.random.uniform(low=-10, high=-5, size=1)[0]
+            # x = np.random.uniform(low=-10, high=-5, size=1)[0]
+            x = np.random.uniform(low=-10, high=10, size=1)[0]
             y = np.random.uniform(low=-10, high=-5, size=1)[0]
             init_pos.append(np.array([x, y, 0]))
         else:
@@ -127,8 +135,10 @@ for t in range(trials):
     Tbar = Tf
     final_us = []
     final_trajectories = [init_pos]
+    final_vels = [[s[3:6] for s in init_states]]
     clf_values = []
     cbf_values = []
+    all_alphas = []
     last_alpha = None
     for Hbar in range(H, 0, -1):
         # GENERATE INITIAL "CONTROL INPUTS" AND TRAJECTORIES
@@ -145,7 +155,7 @@ for t in range(trials):
 
         init_u = np.array(init_u)
 
-        # if t == 11:
+        # if t == 0:
         #     print('Figure For Singular Trajectories')
         #     fig = plt.figure()
         #     ax = fig.add_subplot(projection='3d')
@@ -181,7 +191,7 @@ for t in range(trials):
             # seed_obj, seed_u = obj.solve_central(init_u, steps=args.iter)
             seed_u = np.array(seed_u).reshape((N, Hbar, control_input_size))
 
-            # if t == 11:
+            # if t == 0:
             #     print('Figure For Fair Trajectories')
             #     fig = plt.figure()
             #     ax = fig.add_subplot(projection='3d')
@@ -197,31 +207,41 @@ for t in range(trials):
         except Exception as e:
             print(e)
             print('Fair Planner error at time {}'.format(H-Hbar))
+            
             # use previous fair trajectory input instead of solo trajectory input if possible
-            seed_u = seed_u[:,1:,:]        
+            # seed_u = seed_u[:,1:,:]        
+
+            # use solo trajs as ref
+            seed_u = init_u
             fair_planner_solver_errors += 1
 
         obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, target, Q, alpha, beta, gamma, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=args.sd)
         obj.solo_energies = solo_energies
         try:
-            final_u, cbf_value, clf_value, nbf_alpha = obj.solve_nbf(seed_u=seed_u, last_alpha=last_alpha, mpc=True)
-            final_u = np.array(final_u)  # H, N, control_input    
-            final_u = final_u.transpose(1, 0, 2)  # N, H, control_input
-            cbf_values.append(cbf_value)
-            clf_values.append(clf_value)
-            last_alpha = nbf_alpha
-
-            # TESTING DIST NBF STUFF
-            # test_uis = obj.solve_distributed_nbf(seed_u, last_alpha)
-            # final_u = test_uis[:,0:3]
-            # last_alpha = np.max(test_uis[:,3])
-            
+            if dist_nbf:
+                test_uis = obj.solve_distributed_nbf(seed_u, last_alpha)
+                final_u = test_uis[:,0:3]
+                last_alpha = np.max(test_uis[:,3])
+                all_alphas.append(last_alpha)
+            else:
+                final_u, cbf_value, clf_value, nbf_alpha = obj.solve_nbf(seed_u=seed_u, last_alpha=last_alpha, mpc=True)
+                final_u = np.array(final_u)  # H, N, control_input    
+                final_u = final_u.transpose(1, 0, 2)  # N, H, control_input
+                cbf_values.append(cbf_value)
+                clf_values.append(clf_value)
+                last_alpha = nbf_alpha
+                all_alphas.append(last_alpha)
         except Exception as e:
             print(e)
             print('Cant find next step in trajectory at time {}'.format(H-Hbar))
             nbf_solver_errors += 1
+            # if infeasible, try using fair trajectories at this time
+            if dist_nbf:
+                final_u = seed_u[:,0,:]
+            else:
+                final_u = seed_u
             trial_error = True
-            break
+            # break
         
         Tbar = Tf - (H-Hbar)*Tf/H
 
@@ -229,18 +249,22 @@ for t in range(trials):
         new_states = []
         new_poses = []
         for r in range(N):
-            new_state, new_pos = robots[r].forward(final_u[r][0])
-            # new_state, new_pos = robots[r].forward(final_u[r])  # TESTING DIST NBF STUFF
+            if dist_nbf:
+                new_state, new_pos = robots[r].forward(final_u[r])
+                new_us.append(final_u[r])
+            else:
+                new_state, new_pos = robots[r].forward(final_u[r][0])
+                new_us.append(final_u[r][0])
             new_states.append(new_state)
             new_poses.append(new_pos)
-            new_us.append(final_u[r][0])
-            # new_us.append(final_u[r]) # TESTING DIST NBF STUFF
+    
         final_us.append(new_us)
         final_trajectories.append(new_poses)
+        final_vels.append([s[3:6] for s in new_states])
         init_states = new_states
         init_pos = new_poses
 
-        # if t == 11:
+        # if t == 0:
         #     print('Figure For Safe Trajectories')
         #     fig = plt.figure()
         #     ax = fig.add_subplot(projection='3d')
@@ -257,10 +281,8 @@ for t in range(trials):
         #     goal_sphere.plot_3d(ax, alpha=0.2, color='green')
         #     plt.show()
 
-    if trial_error:
-        continue
-    final_trajectories = np.array(final_trajectories)
-    final_trajectories = final_trajectories.transpose(1, 0, 2)  # N, H, positions
+    # if trial_error:
+    #     continue
 
     n = N*H*control_input_size
     Q = np.random.randn(n, n)   # variable for quadratic objective
@@ -271,7 +293,13 @@ for t in range(trials):
 
     final_us = np.array(final_us)
     final_us = final_us.transpose(1, 0, 2)
-    trial_result = obj.check_avoid_constraints(final_us)
+    # trial_result = obj.check_avoid_constraints(final_us)
+    drone_results = obj.check_avoid_constraints(final_us)
+    trial_result = max(drone_results)
+
+    sol_energy = np.round(obj.quad(final_us.flatten()), 3)
+    sol_fairness1 = np.round(obj.fairness(final_us.flatten()), 3)
+    sol_fairness4 = np.round(obj.surge_fairness(final_us.flatten()), 3)
 
     if trial_result == 0:
         successful_trials += 1
@@ -285,6 +313,18 @@ for t in range(trials):
         misses_goal += 1
         print('Missed Goal')
     
+    if trial_error:
+        print('Error in Safety Planner')
+        trial_result += 10
+
+    trial_res = [t, trial_result, sol_energy, sol_fairness1, sol_fairness4]
+    with open('{}/trial_results.csv'.format('test_results'), 'a') as file_obj:
+        writer_obj = writer(file_obj)
+        writer_obj.writerow(trial_res)
+    
+    final_trajectories = np.array(final_trajectories)
+    final_trajectories = final_trajectories.transpose(1, 0, 2)  # N, H, positions
+    
     print('Figure Final Trajectories')
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
@@ -297,15 +337,39 @@ for t in range(trials):
     obs_sphere.plot_3d(ax, alpha=0.2, color='red')
     goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
     goal_sphere.plot_3d(ax, alpha=0.2, color='green')
-    plt.show()
+    plt.savefig('{}/final_traj.png'.format(trial_dir))
+    plt.clf()
+    # plt.show()
 
     print("Figure CLF and CBF Values")
-    fig, axs = plt.subplots(2)
-    axs[0].plot(list(range(len(cbf_values))), cbf_values)
-    axs[0].set_title('h_min')
-    axs[1].plot(list(range(len(clf_values))), clf_values)
-    axs[1].set_title('V_max')
-    plt.show()
+    if not dist_nbf:
+        fig, axs = plt.subplots(2)
+        axs[0].plot(list(range(len(cbf_values))), cbf_values)
+        axs[0].set_title('h_min')
+        axs[1].plot(list(range(len(clf_values))), clf_values)
+        axs[1].set_title('V_max')
+        plt.savefig('{}/final_cbf_clf.png'.format(trial_dir))
+        plt.clf()
+        # plt.show()
+
+    # TODO: Also plot Alpha values 
+
+    # SAVE FINAL TRAJ
+    final_trajectories = np.round(final_trajectories.reshape((N, H*3+3)), 3)
+    drone_results = np.array(drone_results).reshape(N, 1)
+    final_trajectories_result = np.concatenate([drone_results, final_trajectories], axis=1)
+    np.savetxt('{}/final_traj.csv'.format(trial_dir), final_trajectories_result, fmt='%f')
+
+    # SAVE FINAL VELS
+    final_vels = np.array(final_vels)
+    final_vels = final_vels.transpose(1, 0, 2)  # N, H, vels
+    final_vels = np.round(final_vels.reshape((N, H*3+3)), 3)
+    final_vels_result = np.concatenate([drone_results, final_vels], axis=1)
+    np.savetxt('{}/final_vels.csv'.format(trial_dir), final_vels_result, fmt='%f')
+
+    if len(cbf_values) > 0:
+        save_cbf_clf_vals = np.round(np.array([cbf_values, clf_values, all_alphas]), 3)
+        np.savetxt('{}/cbf_clf_alpha_values.csv'.format(trial_dir), save_cbf_clf_vals.T, fmt='%f')
 
 print('Successful Trials {}'.format(successful_trials))
 print('Hit Obstacle {}'.format(collide_with_obstacle))
