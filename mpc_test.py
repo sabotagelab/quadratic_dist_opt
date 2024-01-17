@@ -136,6 +136,7 @@ for t in range(trials):
     clf_values = []
     cbf_values = []
     all_alphas = []
+    all_J_sequences = []
     last_alpha = None
     for Hbar in range(H, 0, -1):
         # GENERATE INITIAL "CONTROL INPUTS" AND TRAJECTORIES
@@ -213,10 +214,11 @@ for t in range(trials):
         obj.solo_energies = solo_energies
         try:
             if dist_nbf:
-                test_uis = obj.solve_distributed_nbf(seed_u, last_alpha)
+                test_uis, all_Js = obj.solve_distributed_nbf(seed_u, last_alpha)
                 final_u = test_uis[:,0:3]
                 last_alpha = test_uis[:,3]
                 all_alphas.append(last_alpha)
+                all_J_sequences.append(all_Js)
             else:
                 final_u, cbf_value, clf_value, nbf_alpha = obj.solve_nbf(seed_u=seed_u, last_alpha=last_alpha, mpc=True)
                 final_u = np.array(final_u)  # H, N, control_input    
@@ -345,6 +347,12 @@ for t in range(trials):
     plt.plot(list(range(len(all_alphas))), all_alphas)
     plt.savefig('{}/alphas.png'.format(trial_dir))
     plt.clf()
+
+    if dist_nbf:
+        print('plot J values of first iteration')
+        plt.plot(list(range(len(all_J_sequences[0]))), all_J_sequences[0])
+        plt.savefig('{}/dist_cost.png'.format(trial_dir))
+        plt.clf()
         
 
     # SAVE FINAL TRAJ
