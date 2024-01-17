@@ -793,9 +793,9 @@ class Objective():
         ti_obj = 2/(self.dt**2) * h_gamma * (hi_obj**h_e) + \
             2/self.dt*(1/self.obstacles['radius']*np.sum(np.sign(obj_actual_dist) * agent_actual_vel))
         ## NORM BARRIER FUNC
-        hi_obj = np.linalg.norm(agent_error_dyn + delta_obj_p)**2 - self.obstacles['radius']**2
-        ti_obj = 2/(self.dt**2) * h_gamma * (hi_obj**h_e) + \
-            2/self.dt*(np.sum(2 * obj_actual_dist * agent_actual_vel))
+        # hi_obj = np.linalg.norm(agent_error_dyn + delta_obj_p)**2 - self.obstacles['radius']**2
+        # ti_obj = 2/(self.dt**2) * h_gamma * (hi_obj**h_e) + \
+        #     2/self.dt*(np.sum(2 * obj_actual_dist * agent_actual_vel))
         gammas.append(ti_obj)
         Ai.append(-1 * np.sign(obj_actual_dist))
         # Ai.append(-1 * 2 * obj_actual_dist)
@@ -827,11 +827,9 @@ class Objective():
         Ai = np.append(Ai, np.zeros((Ai.shape[0], n_p - 1)), axis=1)
         bi = np.zeros((Ai.shape[0], 1))
         if last_alpha is not None:
-            last_alpha = max(0, last_alpha)  # don't let last alpha be negative ?
+            last_alpha = max(0, last_alpha[agent_id])  # don't let last alpha be negative ?
             # bi[3] = last_alpha
             bi[self.N] = last_alpha
-            
-
 
         return gammas, Ai, bi
 

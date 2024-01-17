@@ -354,7 +354,7 @@ for t in range(trials):
         # plt.show()
 
     # Also plot Alpha values 
-    plt.plot(range(list(len(all_alphas))), all_alphas)
+    plt.plot(list(range(len(all_alphas))), all_alphas)
     plt.savefig('{}/alphas.png'.format(trial_dir))
     plt.clf()
         
