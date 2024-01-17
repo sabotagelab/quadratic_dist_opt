@@ -93,8 +93,6 @@ for t in range(trials):
         os.mkdir(trial_dir)
     trial_error = False
     if N >= 10:
-        # x = np.random.uniform(low=-3, high=0, size=1)[0]
-        # y = np.random.uniform(low=-15, high=-12, size=1)[0]
         x = np.random.uniform(low=-10, high=-5, size=1)[0]
         y = np.random.uniform(low=-15, high=-10, size=1)[0]
 
@@ -102,7 +100,6 @@ for t in range(trials):
     init_states = []
     for i in range(N):
         if N < 10:
-            # x = np.random.uniform(low=-10, high=-5, size=1)[0]
             x = np.random.uniform(low=-10, high=10, size=1)[0]
             y = np.random.uniform(low=-10, high=-5, size=1)[0]
             init_pos.append(np.array([x, y, 0]))
@@ -207,9 +204,6 @@ for t in range(trials):
         except Exception as e:
             print(e)
             print('Fair Planner error at time {}'.format(H-Hbar))
-            
-            # use previous fair trajectory input instead of solo trajectory input if possible
-            # seed_u = seed_u[:,1:,:]        
 
             # use solo trajs as ref
             seed_u = init_u
@@ -221,7 +215,6 @@ for t in range(trials):
             if dist_nbf:
                 test_uis = obj.solve_distributed_nbf(seed_u, last_alpha)
                 final_u = test_uis[:,0:3]
-                # last_alpha = np.max(test_uis[:,3])
                 last_alpha = test_uis[:,3]
                 all_alphas.append(last_alpha)
             else:
@@ -242,7 +235,6 @@ for t in range(trials):
             else:
                 final_u = seed_u
             trial_error = True
-            # break
         
         Tbar = Tf - (H-Hbar)*Tf/H
 
@@ -282,9 +274,6 @@ for t in range(trials):
         #     goal_sphere.plot_3d(ax, alpha=0.2, color='green')
         #     plt.show()
 
-    # if trial_error:
-    #     continue
-
     n = N*H*control_input_size
     Q = np.random.randn(n, n)   # variable for quadratic objective
     Q = Q.T @ Q
@@ -294,7 +283,6 @@ for t in range(trials):
 
     final_us = np.array(final_us)
     final_us = final_us.transpose(1, 0, 2)
-    # trial_result = obj.check_avoid_constraints(final_us)
     drone_results = obj.check_avoid_constraints(final_us)
     trial_result = max(drone_results)
 
