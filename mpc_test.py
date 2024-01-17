@@ -221,7 +221,8 @@ for t in range(trials):
             if dist_nbf:
                 test_uis = obj.solve_distributed_nbf(seed_u, last_alpha)
                 final_u = test_uis[:,0:3]
-                last_alpha = np.max(test_uis[:,3])
+                # last_alpha = np.max(test_uis[:,3])
+                last_alpha = test_uis[:,3]
                 all_alphas.append(last_alpha)
             else:
                 final_u, cbf_value, clf_value, nbf_alpha = obj.solve_nbf(seed_u=seed_u, last_alpha=last_alpha, mpc=True)
@@ -352,7 +353,11 @@ for t in range(trials):
         plt.clf()
         # plt.show()
 
-    # TODO: Also plot Alpha values 
+    # Also plot Alpha values 
+    plt.plot(range(list(len(all_alphas))), all_alphas)
+    plt.savefig('{}/alphas.png'.format(trial_dir))
+    plt.clf()
+        
 
     # SAVE FINAL TRAJ
     final_trajectories = np.round(final_trajectories.reshape((N, H*3+3)), 3)
