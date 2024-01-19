@@ -19,7 +19,7 @@ np.random.seed(44)
 
 parser = argparse.ArgumentParser(description='Optimization')
 # MAIN VARIABLES
-parser.add_argument('--results_file', type=str, default='test')
+parser.add_argument('--exp_dir', type=str, default='')
 parser.add_argument('--N', type=int, default=3)
 parser.add_argument('--H', type=int, default=12)
 parser.add_argument('--trials', type=int, default=1)
@@ -47,7 +47,9 @@ parser.add_argument('--Tf', type=int, default=1)
 
 args = parser.parse_args()
 print(args)
-results_file = args.results_file
+exp_dir = 'test_results{}'.format(args.exp_dir)
+if not os.path.exists(exp_dir):
+    os.mkdir(exp_dir)
 
 N = args.N  # number of agents
 alpha = args.alpha   # parameter for fairness constraint
@@ -88,7 +90,7 @@ misses_goal = 0
 # SET INITIAL POSITIONS AND STATES
 for t in range(trials):
     print('Trial {}'.format(t))
-    trial_dir = 'test_results/trial{}'.format(t)
+    trial_dir = '{}/trial{}'.format(exp_dir, t)
     if not os.path.exists(trial_dir):
         os.mkdir(trial_dir)
     trial_error = False
@@ -214,11 +216,13 @@ for t in range(trials):
         obj.solo_energies = solo_energies
         try:
             if dist_nbf:
-                test_uis, all_Js = obj.solve_distributed_nbf(seed_u, last_alpha)
+                test_uis, all_Js, cbfs, clfs = obj.solve_distributed_nbf(seed_u, last_alpha)
                 final_u = test_uis[:,0:3]
                 last_alpha = test_uis[:,3]
                 all_alphas.append(last_alpha)
                 all_J_sequences.append(all_Js)
+                cbf_values.append(cbfs)
+                clf_values.append(clfs)
             else:
                 final_u, cbf_value, clf_value, nbf_alpha = obj.solve_nbf(seed_u=seed_u, last_alpha=last_alpha, mpc=True)
                 final_u = np.array(final_u)  # H, N, control_input    
@@ -309,7 +313,7 @@ for t in range(trials):
         trial_result += 10
 
     trial_res = [t, trial_result, sol_energy, sol_fairness1, sol_fairness4]
-    with open('{}/trial_results.csv'.format('test_results'), 'a') as file_obj:
+    with open('{}/trial_results.csv'.format(exp_dir), 'a') as file_obj:
         writer_obj = writer(file_obj)
         writer_obj.writerow(trial_res)
     
@@ -333,15 +337,15 @@ for t in range(trials):
     # plt.show()
 
     print("Figure CLF and CBF Values")
-    if not dist_nbf:
-        fig, axs = plt.subplots(2)
-        axs[0].plot(list(range(len(cbf_values))), cbf_values)
-        axs[0].set_title('h_min')
-        axs[1].plot(list(range(len(clf_values))), clf_values)
-        axs[1].set_title('V_max')
-        plt.savefig('{}/final_cbf_clf.png'.format(trial_dir))
-        plt.clf()
-        # plt.show()
+    # if not dist_nbf:
+    fig, axs = plt.subplots(2)
+    axs[0].plot(list(range(len(cbf_values))), cbf_values)
+    axs[0].set_title('h_min')
+    axs[1].plot(list(range(len(clf_values))), clf_values)
+    axs[1].set_title('V_max')
+    plt.savefig('{}/final_cbf_clf.png'.format(trial_dir))
+    plt.clf()
+    # plt.show()
 
     # Also plot Alpha values 
     plt.plot(list(range(len(all_alphas))), all_alphas)
@@ -368,7 +372,7 @@ for t in range(trials):
     final_vels_result = np.concatenate([drone_results, final_vels], axis=1)
     np.savetxt('{}/final_vels.csv'.format(trial_dir), final_vels_result, fmt='%f')
 
-    if len(cbf_values) > 0:
+    if not dist_nbf:
         save_cbf_clf_vals = np.round(np.array([cbf_values, clf_values, all_alphas]), 3)
         np.savetxt('{}/cbf_clf_alpha_values.csv'.format(trial_dir), save_cbf_clf_vals.T, fmt='%f')
 

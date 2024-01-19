@@ -656,11 +656,15 @@ class Objective():
         agent_Ais = []
         agent_bis = []
         uis = []
+        cbfs = []
+        clfs = []
         for i in range(self.N):
-            g, Ai, bi = self.init_local_constraints(i, agent_target_pos, h_gamma=h_gamma, h_e=h_e, v_gamma=v_gamma, v_e=v_e)
+            g, Ai, bi, cbf_val, clf_val = self.init_local_constraints(i, agent_target_pos, h_gamma=h_gamma, h_e=h_e, v_gamma=v_gamma, v_e=v_e)
             agent_gammas.append(g)
             agent_Ais.append(Ai)
             agent_bis.append(bi)
+            cbfs.append(cbf_val)
+            clfs.append(clf_val)
             ui = seed_input[i]
             ui_full = np.hstack([ui, g])
             uis.append(ui_full)
@@ -715,7 +719,7 @@ class Objective():
             Ji = self.trades_J_i(uis, seed_input, sigma)
             all_Js.append(Ji)
         
-        return np.array(uis)[:,0:4], all_Js
+        return np.array(uis)[:,0:4], all_Js, cbfs, clfs
 
     
     def init_local_constraints(self, agent_id, target_poses, h_gamma=1, h_e=1, v_gamma=1, v_e=1):
@@ -735,6 +739,7 @@ class Objective():
         # Compute Auxiliary variables with for all other agents
         gammas = []
         Ai = []
+        h_ij_vals = []
         for j in range(self.N):
             if j == agent_id:
                 continue
@@ -749,27 +754,32 @@ class Objective():
             
             # Compute tij 
             ## ABS BARRIER FUNC
-            hij = np.sum(np.abs(agent_error_dyn - neighbor_error_dyn + delta_p) / self.safe_dist - 1)
-            tij = 2/(self.dt**2) * h_gamma * (hij**h_e) + \
-                2/self.dt*(1/self.safe_dist*np.sum(np.sign(actual_dist) * delta_v))
+            # hij = np.sum(np.abs(agent_error_dyn - neighbor_error_dyn + delta_p) / self.safe_dist - 1)
+            # tij = 2/(self.dt**2) * h_gamma * (hij**h_e) + \
+            #     2/self.dt*(1/self.safe_dist*np.sum(np.sign(actual_dist) * delta_v))
             ## NORM BARRIER FUNC
-            # hij = np.linalg.norm(agent_error_dyn - neighbor_error_dyn + delta_p)**2 - self.safe_dist**2
+            hij = np.linalg.norm(agent_error_dyn - neighbor_error_dyn + delta_p)**2 - self.safe_dist**2
             # tij = 2/(self.dt**2) * h_gamma * (hij**h_e) + \
             #     2/self.dt*(np.sum(2 * actual_dist * delta_v))
+            tij = 2/(self.dt**2) * h_gamma * (hij**h_e) + \
+                2/self.dt*(1/self.safe_dist*np.sum(np.sign(actual_dist) * delta_v))
             gammas.append(tij)
             Ai.append(-1 * np.sign(actual_dist))
+            h_ij_vals.append(hij)
 
         # append tij for static obstacles as well (delta_v is 0 and self.safe_dist == obstacle radius)
         obj_actual_dist = self.init_pos[agent_id] - self.obstacles['center']
         delta_obj_p = agent_target_pos - self.obstacles['center']
         ## ABS BARRIER FUNC
-        hi_obj = np.sum(np.abs(agent_error_dyn + delta_obj_p) / self.obstacles['radius'] - 1)
-        ti_obj = 2/(self.dt**2) * h_gamma * (hi_obj**h_e) + \
-            2/self.dt*(1/self.obstacles['radius']*np.sum(np.sign(obj_actual_dist) * agent_actual_vel))
+        # hi_obj = np.sum(np.abs(agent_error_dyn + delta_obj_p) / self.obstacles['radius'] - 1)
+        # ti_obj = 2/(self.dt**2) * h_gamma * (hi_obj**h_e) + \
+        #     2/self.dt*(1/self.obstacles['radius']*np.sum(np.sign(obj_actual_dist) * agent_actual_vel))
         ## NORM BARRIER FUNC
-        # hi_obj = np.linalg.norm(agent_error_dyn + delta_obj_p)**2 - self.obstacles['radius']**2
+        hi_obj = np.linalg.norm(agent_error_dyn + delta_obj_p)**2 - self.obstacles['radius']**2
         # ti_obj = 2/(self.dt**2) * h_gamma * (hi_obj**h_e) + \
         #     2/self.dt*(np.sum(2 * obj_actual_dist * agent_actual_vel))
+        ti_obj = 2/(self.dt**2) * h_gamma * (hi_obj**h_e) + \
+            2/self.dt*(1/self.obstacles['radius']*np.sum(np.sign(obj_actual_dist) * agent_actual_vel))
         gammas.append(ti_obj)
         Ai.append(-1 * np.sign(obj_actual_dist))
         
@@ -777,13 +787,15 @@ class Objective():
         target_actual_dist = self.init_pos[agent_id] - self.target['center']
         delta_target_p = agent_target_pos - self.target['center']
         ## ABS BARRIER FUNC
-        vi_target = -1 * np.sum((np.abs(agent_error_dyn + delta_target_p) / self.target['radius'] - 1))
-        ti_target = 2/(self.dt**2) * v_gamma * (vi_target**v_e) + \
-            2/self.dt*(1/self.target['radius']*np.sum(np.sign(target_actual_dist) * agent_actual_vel))
+        # vi_target = np.sum((np.abs(agent_error_dyn + delta_target_p) / self.target['radius'] - 1))
+        # ti_target = 2/(self.dt**2) * v_gamma * (vi_target**v_e) + \
+        #     2/self.dt*(1/self.target['radius']*np.sum(np.sign(target_actual_dist) * agent_actual_vel))
         ## NORM BARRIER FUNC
-        # vi_target = -1 * (np.linalg.norm(agent_error_dyn + delta_target_p)**2 - self.target['radius']**2)
+        vi_target = np.linalg.norm(agent_error_dyn + delta_target_p)**2 - self.target['radius']**2
         # ti_target = 2/(self.dt**2) * v_gamma * (vi_target**v_e) + \
         #     2/self.dt*(np.sum(2 * target_actual_dist * agent_actual_vel))
+        ti_target = 2/(self.dt**2) * v_gamma * (vi_target**v_e) + \
+            2/self.dt*(1/self.target['radius']*np.sum(np.sign(target_actual_dist) * agent_actual_vel))
         gammas.append(ti_target)
         Ai.append(np.sign(target_actual_dist))
 
@@ -805,7 +817,10 @@ class Objective():
         Ai = np.append(Ai, np.zeros((Ai.shape[0], n_p - 1)), axis=1)
         bi = np.zeros((Ai.shape[0], 1))
 
-        return gammas, Ai, bi
+        cbf_val = min(np.min(h_ij_vals), hi_obj)
+        clf_val = vi_target
+
+        return gammas, Ai, bi, cbf_val, clf_val
     
     # def trades_sigma(self, proposed_inputs, target_positions, grad=False, return_all=False):
     def trades_sigma(self, proposed_inputs, fair_inputs, grad=False, return_all=False):
