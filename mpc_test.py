@@ -193,7 +193,7 @@ for t in range(trials):
         # seed_u = init_u      
         obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, drone_goals, Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
         obj.solo_energies = solo_energies
-        print('Running Fair Planner at time {}'.format(H-Hbar))
+        # print('Running Fair Planner at time {}'.format(H-Hbar))
         fair_planner_time_start = time.time()
         try:
             seed_u, local_sols, fairness, converge_iter = obj.solve_distributed(init_u, steps=fair_dist_iter, dyn='quad')
@@ -229,7 +229,7 @@ for t in range(trials):
         #         goal_sphere.plot_3d(ax, alpha=0.2, color='green')
         #     plt.show()
 
-        print('Running Safety Planner at time {}'.format(H-Hbar))
+        # print('Running Safety Planner at time {}'.format(H-Hbar))
         obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, drone_goals, Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
         obj.solo_energies = solo_energies
         safe_planner_time_start = time.time()
@@ -377,47 +377,47 @@ for t in range(trials):
     final_trajectories = np.array(final_trajectories)
     final_trajectories = final_trajectories.transpose(1, 0, 2)  # N, H, positions
     
-    print('Figure Final Trajectories')
-    fig = plt.figure()
-    ax = fig.add_subplot(projection='3d')
-    times = np.linspace(0, Tf, H)
-    for i in range(N):
-        traj = final_trajectories[i]
-        ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
-        ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
-    for obsId, obs in obstacles.items():
-        co = obs['center']
-        ro = obs['radius']
-        obs_sphere = Sphere([co[0], co[1], co[2]], ro)
-        obs_sphere.plot_3d(ax, alpha=0.2, color='red')
-    for gId, g in goals.items():
-        cg = g['center']
-        rg = g['radius']
-        goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
-        goal_sphere.plot_3d(ax, alpha=0.2, color='green')
-    plt.savefig('{}/final_traj.png'.format(trial_dir))
-    plt.clf()
+    # print('Figure Final Trajectories')
+    # fig = plt.figure()
+    # ax = fig.add_subplot(projection='3d')
+    # times = np.linspace(0, Tf, H)
+    # for i in range(N):
+    #     traj = final_trajectories[i]
+    #     ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
+    #     ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
+    # for obsId, obs in obstacles.items():
+    #     co = obs['center']
+    #     ro = obs['radius']
+    #     obs_sphere = Sphere([co[0], co[1], co[2]], ro)
+    #     obs_sphere.plot_3d(ax, alpha=0.2, color='red')
+    # for gId, g in goals.items():
+    #     cg = g['center']
+    #     rg = g['radius']
+    #     goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
+    #     goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+    # plt.savefig('{}/final_traj.png'.format(trial_dir))
+    # plt.clf()
     # plt.show()
 
-    print("Figure CLF and CBF Values")
-    fig, axs = plt.subplots(2)
-    axs[0].plot(list(range(len(cbf_values))), cbf_values)
-    axs[0].set_title('h_min')
-    axs[1].plot(list(range(len(clf_values))), clf_values)
-    axs[1].set_title('V_max')
-    plt.savefig('{}/final_cbf_clf.png'.format(trial_dir))
-    plt.clf()
+    # print("Figure CLF and CBF Values")
+    # fig, axs = plt.subplots(2)
+    # axs[0].plot(list(range(len(cbf_values))), cbf_values)
+    # axs[0].set_title('h_min')
+    # axs[1].plot(list(range(len(clf_values))), clf_values)
+    # axs[1].set_title('V_max')
+    # plt.savefig('{}/final_cbf_clf.png'.format(trial_dir))
+    # plt.clf()
 
     # Also plot delta values 
-    plt.plot(list(range(len(all_deltas))), all_deltas)
-    plt.savefig('{}/deltas.png'.format(trial_dir))
-    plt.clf()
+    # plt.plot(list(range(len(all_deltas))), all_deltas)
+    # plt.savefig('{}/deltas.png'.format(trial_dir))
+    # plt.clf()
 
-    if dist_nbf:
-        print('plot J values of first iteration')
-        plt.plot(list(range(len(all_J_sequences[0]))), all_J_sequences[0])
-        plt.savefig('{}/dist_cost.png'.format(trial_dir))
-        plt.clf()
+    # if dist_nbf:
+    #     print('plot J values of first iteration')
+    #     plt.plot(list(range(len(all_J_sequences[0]))), all_J_sequences[0])
+    #     plt.savefig('{}/dist_cost.png'.format(trial_dir))
+    #     plt.clf()
 
     # SAVE FINAL TRAJ
     final_trajectories = np.round(final_trajectories.reshape((N, H*3+3)), 3)
@@ -441,17 +441,17 @@ for t in range(trials):
             np.savetxt('{}/ind_cbf_separation.csv'.format(trial_dir), np.array(cbf_separation), fmt='%f')
             np.savetxt('{}/ind_clf_reach.csv'.format(trial_dir), np.array(clf_reach), fmt='%f')
             
-            plt.plot(list(range(len(cbf_obstacles))), cbf_obstacles)
-            plt.savefig('{}/ind_cbf_obstacles.png'.format(trial_dir))
-            plt.clf()
+            # plt.plot(list(range(len(cbf_obstacles))), cbf_obstacles)
+            # plt.savefig('{}/ind_cbf_obstacles.png'.format(trial_dir))
+            # plt.clf()
 
-            plt.plot(list(range(len(cbf_separation))), cbf_separation)
-            plt.savefig('{}/ind_cbf_separation.png'.format(trial_dir))
-            plt.clf()
+            # plt.plot(list(range(len(cbf_separation))), cbf_separation)
+            # plt.savefig('{}/ind_cbf_separation.png'.format(trial_dir))
+            # plt.clf()
 
-            plt.plot(list(range(len(clf_reach))), clf_reach)
-            plt.savefig('{}/ind_cld_reach.png'.format(trial_dir))
-            plt.clf()
+            # plt.plot(list(range(len(clf_reach))), clf_reach)
+            # plt.savefig('{}/ind_cld_reach.png'.format(trial_dir))
+            # plt.clf()
 
 print('Successful Trials {}'.format(successful_trials))
 print('Hit Obstacle {}'.format(collide_with_obstacle))
