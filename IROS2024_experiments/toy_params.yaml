@@ -1,0 +1,111 @@
+3:
+  Tf: 1
+  H: 20  # 20 for N=3,5 25 for N = 7 (for Central Safe Planner)
+  sd: 0.01
+  Ubox: 300
+  fair_planner:
+    alpha: 0.001
+    distributed:
+      kappa: 500
+      eps_bounds: 100
+      iter: 1000
+  safe_planner:
+    central:
+      h_gamma: 50
+      V_alpha: 1.0
+    distributed:
+      hi: 1  # 0.1 for N=5,7, 1 for N=3
+      ho: 1  # 0.1 for N=5,7, 1 for N=3
+      hv: 1
+      step_size: 0.01
+      trade_param: 0.05 # 0.01 for N=5,7, 0.05 for N=3
+  obstacles:
+    obs1:
+      center: [0, -2, 0]
+      radius: 1.25
+  goals:
+    g1:
+      center: [5, 5, 0]
+      radius: 5
+  starts:
+    a1:
+      center: [-6, -7.5, 0]
+      radius: 4
+    a2:
+      center: [6, -7.5, 0]
+      radius: 4
+5:
+  Tf: 1
+  H: 20  # 20 for N=3,5 25 for N = 7 (for Central Safe Planner)
+  sd: 0.01
+  Ubox: 300
+  fair_planner:
+    alpha: 0.001
+    distributed:
+      kappa: 500
+      eps_bounds: 100
+      iter: 1000
+  safe_planner:
+    central:
+      h_gamma: 50
+      V_alpha: 1.0
+    distributed:
+      hi: .1  # 0.1 for N=5,7, 1 for N=3
+      ho: .1  # 0.1 for N=5,7, 1 for N=3
+      hv: 1
+      step_size: 0.01
+      trade_param: 0.01 # 0.01 for N=5,7, 0.05 for N=3
+  obstacles:
+    obs1:
+      center: [0, -2, 0]
+      radius: 1.25
+  goals:
+    g1:
+      center: [5, 5, 0]
+      radius: 5
+  starts:
+    a1:
+      center: [-6, -7.5, 0]
+      radius: 4
+    a2:
+      center: [6, -7.5, 0]
+      radius: 4
+7: 
+  Tf: 1
+  H: 25  # 20 for N=3,5 25 for N = 7 (for Central Safe Planner)
+  sd: 0.01
+  Ubox: 300
+  fair_planner:
+    alpha: 0.001
+    distributed:
+      kappa: 500
+      eps_bounds: 100
+      iter: 1000
+  safe_planner:
+    central:
+      h_gamma: 10
+      V_alpha: 1.0
+    distributed:
+      hi: .1  # 0.1 for N=5,7, 1 for N=3
+      ho: .1  # 0.1 for N=5,7, 1 for N=3
+      hv: 1
+      step_size: 0.01
+      trade_param: 0.01 # 0.01 for N=5,7, 0.05 for N=3
+  obstacles:
+    obs1:
+      center: [0, -2, 0]
+      radius: 1.25
+  goals:
+    g1:
+      center: [5, 5, 0]
+      radius: 5
+  starts:
+    a1:
+      center: [-6, -7.5, 0]
+      radius: 4
+    a2:
+      center: [6, -7.5, 0]
+      radius: 4
+
+
+

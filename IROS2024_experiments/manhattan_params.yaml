@@ -1,0 +1,126 @@
+3:
+  Tf: 1
+  H: 25
+  sd: 0.0005
+  Ubox: 500
+  fair_planner:
+    alpha: 0.001
+    distributed:
+      kappa: 1000
+      eps_bounds: 150
+      iter: 100
+  safe_planner:
+    central:
+      h_gamma: 1000
+      V_alpha: 1
+    distributed:
+      hi: 1
+      ho: 1
+      hv: 1
+      step_size: 0.01
+      trade_param: 0.1
+  obstacles:
+    obs1:
+      center: [2.75, 4, 0]
+      radius: 0.25
+    obs2:
+      center: [1.6, 1, 0]
+      radius: .25
+  goals:
+    g1:
+      center: [2.5, 5, .01]
+      radius: 0.3
+    g2: 
+      center: [2.5, 0.25, .01]
+      radius: 0.3
+  starts:
+    a1:
+      center: [0.25, 1.6, .01]
+      radius: 0.6
+    a2:
+      center: [2, 2, .01]
+      radius: 0.6
+5:
+  Tf: 1
+  H: 25
+  sd: 0.0005
+  Ubox: 300
+  fair_planner:
+    alpha: 0.001
+    distributed:
+      kappa: 1000
+      eps_bounds: 100
+      iter: 100
+  safe_planner:
+    central:
+      h_gamma: 1000
+      V_alpha: .05
+    distributed:
+      hi: 1
+      ho: 1
+      hv: 1
+      step_size: 0.01
+      trade_param: 0.1
+  obstacles:
+    obs1:
+      center: [2.75, 4, 0]
+      radius: 0.25
+    obs2:
+      center: [1.6, 1, 0]
+      radius: .25
+  goals:
+    g1:
+      center: [2.5, 5, .01]
+      radius: 0.3
+    g2: 
+      center: [2.5, 0.25, .01]
+      radius: 0.3
+  starts:
+    a1:
+      center: [0.25, 1.6, .01]
+      radius: 0.6
+    a2:
+      center: [2, 2, .01]
+      radius: 0.6
+10:
+  Tf: 1
+  H: 30
+  sd: 0.0002
+  Ubox: 300
+  fair_planner:
+    alpha: 0.001
+    distributed:
+      kappa: 1000
+      eps_bounds: 100
+      iter: 100
+  safe_planner:
+    central:
+      h_gamma: 5000
+      V_alpha: .0001
+    distributed:
+      hi: 1
+      ho: 1
+      hv: 1
+      step_size: 0.01
+      trade_param: 0.1
+  obstacles:
+    obs1:
+      center: [2.75, 4, 0]
+      radius: 0.25
+    obs2:
+      center: [1.6, 1, 0]
+      radius: .25
+  goals:
+    g1:
+      center: [2.5, 5, .01]
+      radius: 0.3
+    g2: 
+      center: [2.5, 0.25, .01]
+      radius: 0.3
+  starts:
+    a1:
+      center: [0.25, 1.6, .01]
+      radius: 0.6
+    a2:
+      center: [2, 2, .01]
+      radius: 0.6

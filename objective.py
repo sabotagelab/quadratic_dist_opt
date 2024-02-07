@@ -4,7 +4,7 @@ from scipy.optimize import Bounds, basinhopping, minimize, NonlinearConstraint
 from generate_trajectories import generate_agent_states, generate_init_traj_quad
 
 EPS = 1e-8
-CP_SOLVER='ECOS'
+CP_SOLVER='MOSEK' #'ECOS'
 SCIPY_SOLVER='SLSQP' #'L-BFGS-B' #
 
 class Objective():
@@ -512,20 +512,31 @@ class Objective():
             C = []
             for r in range(self.N):
                 # obstacle avoidance
-                h_agent_o_min = []
+                # h_agent_o_min = []
+                # pos = robots[r].state[0:3]
+                # for obsId, obs in self.obstacles.items():
+                #     c = obs['center']
+                #     rad = obs['radius'] + self.safe_dist  # + 1
+                #     h_agent_o_min.append((pos[0] - c[0])**2 + (pos[1] - c[1])**2 + (pos[2] - c[2])**2 - rad**2)
+                # h_o = np.min(h_agent_o_min)
+                # h_os.append(h_o)
+                
+                # h_o_min = np.min([h_o_min, h_o])
+                # Brow_start = [0 for i in range(r*6)]
+                # Brow_end = [0 for i in range((r+1)*6, self.N*6)]
+                # Brow = Brow_start + [2*(pos[0] - c[0]), 2*(pos[1] - c[1]), 2*(pos[2] - c[2]), 0, 0, 0] + Brow_end
+                # B.append(Brow)
                 pos = robots[r].state[0:3]
                 for obsId, obs in self.obstacles.items():
                     c = obs['center']
                     rad = obs['radius'] + self.safe_dist  # + 1
-                    h_agent_o_min = (pos[0] - c[0])**2 + (pos[1] - c[1])**2 + (pos[2] - c[2])**2 - rad**2
-                h_o = np.min(h_agent_o_min)
-                h_os.append(h_o)
-                
-                h_o_min = np.min([h_o_min, h_o])
-                Brow_start = [0 for i in range(r*6)]
-                Brow_end = [0 for i in range((r+1)*6, self.N*6)]
-                Brow = Brow_start + [2*(pos[0] - c[0]), 2*(pos[1] - c[1]), 2*(pos[2] - c[2]), 0, 0, 0] + Brow_end
-                B.append(Brow)
+                    h_o = (pos[0] - c[0])**2 + (pos[1] - c[1])**2 + (pos[2] - c[2])**2 - rad**2
+                    h_os.append(h_o)
+                    h_o_min = np.min([h_o_min, h_o])
+                    Brow_start = [0 for i in range(r*6)]
+                    Brow_end = [0 for i in range((r+1)*6, self.N*6)]
+                    Brow = Brow_start + [2*(pos[0] - c[0]), 2*(pos[1] - c[1]), 2*(pos[2] - c[2]), 0, 0, 0] + Brow_end
+                    B.append(Brow)
 
                 # reach goal
                 cg = self.targets[r]['center']
@@ -583,8 +594,8 @@ class Objective():
 
             if cbf_controller.status in ['infeasible', 'infeasible_inaccurate']:
                 print(f"QP infeasible")
-                cbf_controller.solve(solver=CP_SOLVER, verbose=True)
-                print(cbf_controller)
+                # cbf_controller.solve(solver=CP_SOLVER, verbose=True)
+                # print(cbf_controller)
                 return []
             
             for r in range(self.N):
