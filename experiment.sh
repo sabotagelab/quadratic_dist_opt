@@ -29,6 +29,7 @@ python mpc_test.py --exp_dir /5_central_fair_notion5 --trials 100 --notion 5 --N
 
 
 python mpc_test.py --exp_dir /7_central_fair_notion0 --trials 100 --notion 0 --N 7 --exp_params IROS2024_experiments/manhattan_params2.yaml
+python mpc_test.py --exp_dir /7_central_fair_notion1 --trials 100 --notion 1 --N 7 --exp_params IROS2024_experiments/manhattan_params2.yaml
 python mpc_test.py --exp_dir /7_central_fair_notion2 --trials 100 --notion 2 --N 7 --exp_params IROS2024_experiments/manhattan_params2.yaml
 python mpc_test.py --exp_dir /7_central_fair_notion3 --trials 100 --notion 3 --N 7 --exp_params IROS2024_experiments/manhattan_params2.yaml
 python mpc_test.py --exp_dir /7_central_fair_notion4 --trials 100 --notion 4 --N 7 --exp_params IROS2024_experiments/manhattan_params2.yaml
@@ -36,6 +37,7 @@ python mpc_test.py --exp_dir /7_central_fair_notion5 --trials 100 --notion 5 --N
 
 
 python mpc_test.py --exp_dir /10_central_fair_notion0 --trials 100 --notion 0 --N 10 --exp_params IROS2024_experiments/manhattan_params2.yaml
+python mpc_test.py --exp_dir /10_central_fair_notion1 --trials 100 --notion 1 --N 10 --exp_params IROS2024_experiments/manhattan_params2.yaml
 python mpc_test.py --exp_dir /10_central_fair_notion2 --trials 100 --notion 2 --N 10 --exp_params IROS2024_experiments/manhattan_params2.yaml
 python mpc_test.py --exp_dir /10_central_fair_notion3 --trials 100 --notion 3 --N 10 --exp_params IROS2024_experiments/manhattan_params2.yaml
 python mpc_test.py --exp_dir /10_central_fair_notion4 --trials 100 --notion 4 --N 10 --exp_params IROS2024_experiments/manhattan_params2.yaml
@@ -58,12 +60,14 @@ python mpc_test.py --exp_dir /5_central_fair_notion4_dist --trials 100 --notion 
 python mpc_test.py --exp_dir /5_central_fair_notion5_dist --trials 100 --notion 5 --N 5 --dist --exp_params IROS2024_experiments/manhattan_params2.yaml
 
 # python mpc_test.py --exp_dir /7_central_fair_notion0_dist --trials 100 --notion 0 --N 7 --dist --exp_params IROS2024_experiments/manhattan_params2.yaml
+# python mpc_test.py --exp_dir /7_central_fair_notion1_dist --trials 100 --notion 1 --N 7 --dist --exp_params IROS2024_experiments/manhattan_params2.yaml
 # python mpc_test.py --exp_dir /7_central_fair_notion2_dist --trials 100 --notion 2 --N 7 --dist --exp_params IROS2024_experiments/manhattan_params2.yaml
 # python mpc_test.py --exp_dir /7_central_fair_notion3_dist --trials 100 --notion 3 --N 7 --dist --exp_params IROS2024_experiments/manhattan_params2.yaml
 # python mpc_test.py --exp_dir /7_central_fair_notion4_dist --trials 100 --notion 4 --N 7 --dist --exp_params IROS2024_experiments/manhattan_params2.yaml
 # python mpc_test.py --exp_dir /7_central_fair_notion5_dist --trials 100 --notion 5 --N 7 --dist --exp_params IROS2024_experiments/manhattan_params2.yaml
 
 # python mpc_test.py --exp_dir /10_central_fair_notion0_dist --trials 100 --notion 0 --N 10 --dist --exp_params IROS2024_experiments/manhattan_params2.yaml
+# python mpc_test.py --exp_dir /10_central_fair_notion1_dist --trials 100 --notion 1 --N 10 --dist --exp_params IROS2024_experiments/manhattan_params2.yaml
 # python mpc_test.py --exp_dir /10_central_fair_notion2_dist --trials 100 --notion 2 --N 10 --dist --exp_params IROS2024_experiments/manhattan_params2.yaml
 # python mpc_test.py --exp_dir /10_central_fair_notion3_dist --trials 100 --notion 3 --N 10 --dist --exp_params IROS2024_experiments/manhattan_params2.yaml
 # python mpc_test.py --exp_dir /10_central_fair_notion4_dist --trials 100 --notion 4 --N 10 --dist --exp_params IROS2024_experiments/manhattan_params2.yaml
