@@ -1,0 +1,168 @@
+3:
+  Tf: 1
+  H: 25
+  sd: 0.0002
+  Ubox: 100
+  fair_planner:
+    alpha: 0.001
+    distributed:
+      kappa: 500
+      eps_bounds: 25
+      iter: 1000
+  safe_planner:
+    central:
+      h_gamma: 1000
+      V_alpha: 1
+    distributed:
+      hi: .001
+      ho: .001
+      hv: 1
+      step_size: 0.01
+      trade_param: 0.01
+  obstacles:
+    obs1:
+      center: [2.75, 4, 0.0]  #empire state area
+      radius: 0.4
+    obs2:
+      center: [1.5, 0.75, 0] #financial district
+      radius: .25
+  goals:
+    g1:
+      center: [2.4, 4.5, .25] #hells kitchen
+      radius: 0.25
+    g2: 
+      center: [2.5, 0, .25] #lower manhattan
+      radius: 0.2
+  starts:
+    a1:
+      center: [0.25, 1.6, .05] #waterfront in jersey
+      radius: 0.25
+    a2:
+      center: [2, 1.75, .05] #brooklyn heights
+      radius: 0.25
+5:
+  Tf: 1
+  H: 25
+  sd: 0.0002
+  Ubox: 100
+  fair_planner:
+    alpha: 0.001
+    distributed:
+      kappa: 500
+      eps_bounds: 25
+      iter: 1000
+  safe_planner:
+    central:
+      h_gamma: 1000
+      V_alpha: 1
+    distributed:
+      hi: .001
+      ho: .001
+      hv: 1
+      step_size: 0.01
+      trade_param: 0.002
+  obstacles:
+    obs1:
+      center: [2.75, 4, 0.0]  #empire state area
+      radius: 0.4
+    obs2:
+      center: [1.5, 0.75, 0] #financial district
+      radius: .25
+  goals:
+    g1:
+      center: [2.4, 4.5, .25] #hells kitchen
+      radius: 0.25
+    g2: 
+      center: [2.5, 0, .25] #lower manhattan
+      radius: 0.2
+  starts:
+    a1:
+      center: [0.25, 1.6, .05] #waterfront in jersey
+      radius: 0.25
+    a2:
+      center: [2, 1.75, .05] #brooklyn heights
+      radius: 0.25
+7:
+  Tf: 1
+  H: 25
+  sd: 0.0002
+  Ubox: 100
+  fair_planner:
+    alpha: 0.001
+    distributed:
+      kappa: 1000
+      eps_bounds: 25
+      iter: 100
+  safe_planner:
+    central:
+      h_gamma: 1000
+      V_alpha: 1
+    distributed:
+      hi: .001
+      ho: .001
+      hv: 1
+      step_size: 0.01
+      trade_param: 0.002
+  obstacles:
+    obs1:
+      center: [2.75, 4, 0.0]  #empire state area
+      radius: 0.4
+    obs2:
+      center: [1.5, 0.75, 0] #financial district
+      radius: .25
+  goals:
+    g1:
+      center: [2.4, 4.5, .25] #hells kitchen
+      radius: 0.25
+    g2: 
+      center: [2.5, 0, .25] #lower manhattan
+      radius: 0.2
+  starts:
+    a1:
+      center: [0.25, 1.6, .05] #waterfront in jersey
+      radius: 0.25
+    a2:
+      center: [2, 1.75, .05] #brooklyn heights
+      radius: 0.25
+10:
+  Tf: 1
+  H: 25
+  sd: 0.0002
+  Ubox: 200
+  fair_planner:
+    alpha: 0.001
+    distributed:
+      kappa: 1000
+      eps_bounds: 25
+      iter: 100
+  safe_planner:
+    central:
+      h_gamma: 5000
+      V_alpha: .001
+    distributed:
+      hi: .001
+      ho: .001
+      hv: 1
+      step_size: 0.01
+      trade_param: 0.002
+  obstacles:
+    obs1:
+      center: [2.75, 4, 0.0]  #empire state area
+      radius: 0.4
+    obs2:
+      center: [1.5, 0.75, 0] #financial district
+      radius: .25
+  goals:
+    g1:
+      center: [2.4, 4.5, .25] #hells kitchen
+      radius: 0.25
+    g2: 
+      center: [2.5, 0, .25] #lower manhattan
+      radius: 0.2
+  starts:
+    a1:
+      center: [0.25, 1.6, .05] #waterfront in jersey
+      radius: 0.25
+    a2:
+      center: [2, 1.75, .05] #brooklyn heights
+      radius: 0.25

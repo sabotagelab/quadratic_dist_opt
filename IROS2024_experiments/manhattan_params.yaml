@@ -14,11 +14,11 @@
       h_gamma: 1000
       V_alpha: 1
     distributed:
-      hi: 1
-      ho: 1
+      hi: .001
+      ho: .001
       hv: 1
       step_size: 0.01
-      trade_param: 0.1
+      trade_param: 0.01
   obstacles:
     obs1:
       center: [2.75, 4, 0]
@@ -35,10 +35,10 @@
       radius: 0.3
   starts:
     a1:
-      center: [0.25, 1.6, .01]
+      center: [0.25, 1.6, .05]
       radius: 0.6
     a2:
-      center: [2, 2, .01]
+      center: [2, 2, .05]
       radius: 0.6
 5:
   Tf: 1
@@ -56,11 +56,11 @@
       h_gamma: 1000
       V_alpha: .05
     distributed:
-      hi: 1
-      ho: 1
+      hi: .001
+      ho: .001
       hv: 1
       step_size: 0.01
-      trade_param: 0.1
+      trade_param: 0.005
   obstacles:
     obs1:
       center: [2.75, 4, 0]
@@ -82,10 +82,10 @@
     a2:
       center: [2, 2, .01]
       radius: 0.6
-10:
+7:
   Tf: 1
-  H: 30
-  sd: 0.0002
+  H: 25
+  sd: 0.0005
   Ubox: 300
   fair_planner:
     alpha: 0.001
@@ -95,8 +95,50 @@
       iter: 100
   safe_planner:
     central:
+      h_gamma: 1000
+      V_alpha: .05
+    distributed:
+      hi: .0001
+      ho: .0001
+      hv: 1
+      step_size: 0.01
+      trade_param: 0.001
+  obstacles:
+    obs1:
+      center: [2.75, 4, 0]
+      radius: 0.25
+    obs2:
+      center: [1.6, 1, 0]
+      radius: .25
+  goals:
+    g1:
+      center: [2.5, 5, .01]
+      radius: 0.3
+    g2: 
+      center: [2.5, 0.25, .01]
+      radius: 0.3
+  starts:
+    a1:
+      center: [0.25, 1.6, .01]
+      radius: 0.6
+    a2:
+      center: [2, 2, .01]
+      radius: 0.6
+8:
+  Tf: 1
+  H: 25
+  sd: 0.0002
+  Ubox: 100
+  fair_planner:
+    alpha: 0.001
+    distributed:
+      kappa: 1000
+      eps_bounds: 25
+      iter: 100
+  safe_planner:
+    central:
       h_gamma: 5000
-      V_alpha: .0001
+      V_alpha: 0.05
     distributed:
       hi: 1
       ho: 1
@@ -120,7 +162,49 @@
   starts:
     a1:
       center: [0.25, 1.6, .01]
-      radius: 0.6
+      radius: 0.3
     a2:
-      center: [2, 2, .01]
-      radius: 0.6
+      center: [2, 2.5, .01]
+      radius: 0.3
+10:
+  Tf: 1
+  H: 25
+  sd: 0.0002
+  Ubox: 200
+  fair_planner:
+    alpha: 0.001
+    distributed:
+      kappa: 1000 #2500 # 1000 without delta
+      eps_bounds: 25
+      iter: 100
+  safe_planner:
+    central:
+      h_gamma: 5000 #10000  # 5000 without delta
+      V_alpha: 0.001
+    distributed:
+      hi: .0001
+      ho: .0001
+      hv: 1
+      step_size: 0.01
+      trade_param: 0.0005
+  obstacles:
+    obs1:
+      center: [2.75, 4, 0]
+      radius: 0.25
+    obs2:
+      center: [1.6, 1, 0]
+      radius: .25
+  goals:
+    g1:
+      center: [2.5, 5, .01]
+      radius: 0.3
+    g2: 
+      center: [2.5, 0.25, .01]
+      radius: 0.3
+  starts:
+    a1:
+      center: [0.25, 1.6, .05]
+      radius: 0.3
+    a2:
+      center: [2, 2.5, .05]
+      radius: 0.3

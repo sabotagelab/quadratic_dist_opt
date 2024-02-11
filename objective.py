@@ -317,7 +317,7 @@ class Objective():
         control_input_size = self.control_input_size
 
         u_reshape = u.reshape((self.N, self.H, control_input_size))
-        agent_sum_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1) / np.array(self.solo_energies)
+        agent_sum_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1) / (np.array(self.solo_energies) + EPS)
         mean_energy = np.mean(agent_sum_energies)
         diffs = 0
         for i in range(self.N):
@@ -330,7 +330,7 @@ class Objective():
         control_input_size = self.control_input_size
 
         u_reshape = u.reshape((self.N, self.H, control_input_size))
-        agent_sum_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1) / np.array(self.solo_energies)
+        agent_sum_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1) / (np.array(self.solo_energies) + EPS)
         mean_energy = np.mean(agent_sum_energies)
         partials = []
         for i in range(self.N):
@@ -512,20 +512,6 @@ class Objective():
             C = []
             for r in range(self.N):
                 # obstacle avoidance
-                # h_agent_o_min = []
-                # pos = robots[r].state[0:3]
-                # for obsId, obs in self.obstacles.items():
-                #     c = obs['center']
-                #     rad = obs['radius'] + self.safe_dist  # + 1
-                #     h_agent_o_min.append((pos[0] - c[0])**2 + (pos[1] - c[1])**2 + (pos[2] - c[2])**2 - rad**2)
-                # h_o = np.min(h_agent_o_min)
-                # h_os.append(h_o)
-                
-                # h_o_min = np.min([h_o_min, h_o])
-                # Brow_start = [0 for i in range(r*6)]
-                # Brow_end = [0 for i in range((r+1)*6, self.N*6)]
-                # Brow = Brow_start + [2*(pos[0] - c[0]), 2*(pos[1] - c[1]), 2*(pos[2] - c[2]), 0, 0, 0] + Brow_end
-                # B.append(Brow)
                 pos = robots[r].state[0:3]
                 for obsId, obs in self.obstacles.items():
                     c = obs['center']
@@ -537,6 +523,14 @@ class Objective():
                     Brow_end = [0 for i in range((r+1)*6, self.N*6)]
                     Brow = Brow_start + [2*(pos[0] - c[0]), 2*(pos[1] - c[1]), 2*(pos[2] - c[2]), 0, 0, 0] + Brow_end
                     B.append(Brow)
+                # ground avoidance
+                # h_g = pos[2]**2
+                # h_os.append(h_g)
+                # h_o_min = np.min([h_o_min, h_g])
+                # Brow_start = [0 for i in range(r*6)]
+                # Brow_end = [0 for i in range((r+1)*6, self.N*6)]
+                # Brow = Brow_start + [0, 0, 2*pos[2], 0, 0, 0] + Brow_end
+                # B.append(Brow)
 
                 # reach goal
                 cg = self.targets[r]['center']
@@ -580,23 +574,32 @@ class Objective():
                 Lgh2_u = np.dot(A, g_diag) @ u_t
                 constraints.append(Lfh2 + Lgh2_u + h_gamma*h_min >= 0) 
 
+            # Ubox constraint
+            constraints.append(-1 * self.Ubox <= u_t)
+            constraints.append(u_t <= self.Ubox)
+
             if last_delta is not None:
                 last_delta = max(0, last_delta)  # don't let last alpha be negative ?
                 # last_delta = np.maximum(np.zeros(self.N), last_delta)
                 constraints.append(delta <= last_delta)
 
-            # Ubox constraint
-            constraints.append(-1 * self.Ubox <= u_t)
-            constraints.append(u_t <= self.Ubox)
-
             cbf_controller = cp.Problem(objective, constraints)
             cbf_controller.solve(solver=CP_SOLVER)
 
+            relaxed = False
             if cbf_controller.status in ['infeasible', 'infeasible_inaccurate']:
                 print(f"QP infeasible")
-                # cbf_controller.solve(solver=CP_SOLVER, verbose=True)
-                # print(cbf_controller)
-                return []
+                if last_delta is not None:
+                    print(f"attempting relaxation")
+                    constraints.pop()
+                    cbf_controller = cp.Problem(objective, constraints)
+                    cbf_controller.solve(solver=CP_SOLVER)
+                    relaxed = True
+                    if cbf_controller.status in ['infeasible', 'infeasible_inaccurate']:
+                        print(f"Relaxed problem also infeasible")
+                        raise Exception('Central Safe Problem Infeasible after relaxation')
+                else:
+                    raise Exception('Central Safe Problem Infeasible')
             
             for r in range(self.N):
                 idx_start = r*self.control_input_size
@@ -605,7 +608,7 @@ class Objective():
             final_u.append(u_t.value.reshape(self.N, self.control_input_size))
             if mpc:
                 break
-        return final_u, h_min, V_max, delta.value[0], h_os, h_cs, Vs
+        return final_u, h_min, V_max, delta.value[0], h_os, h_cs, Vs, relaxed
         
 
     ##########################################################

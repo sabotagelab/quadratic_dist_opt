@@ -86,7 +86,10 @@ for t in range(trials):
     trial_dir = '{}/trial{}'.format(exp_dir, t)
     if not os.path.exists(trial_dir):
         os.mkdir(trial_dir)
+    fair_planner_error = False
     trial_error = False
+    trial_error_after_relax = False
+    relax_num = 0
 
     init_pos = []
     init_states = []
@@ -97,12 +100,6 @@ for t in range(trials):
     runtimes_fair_planner = []
     runtimes_safe_planner = []
     for i in range(N):
-        # x1 = np.random.uniform(low=-10, high=-2, size=1)[0]
-        # x2 = np.random.uniform(low=2, high=10, size=1)[0]
-        # x = np.random.choice([x1, x2])
-        # y = np.random.uniform(low=-10, high=-5, size=1)[0]
-        # init_pos.append(np.array([x, y, 0]))
-
         # Pick Start Area and Generate Random Position Within Area
         start = np.random.choice(list(starts.keys()))
         start_pos = starts[start]['center']
@@ -146,13 +143,12 @@ for t in range(trials):
         init_u = []
         init_traj = []
         for i in range(N):
-            # leftright = 1 if i % 2 == 0 else -1
-            # x_adj = 1 if i % 2 == 0 else 0
-            # z_adj = 1 if (i % 3 == 0) and N >= 10 else 0
-            # pos_adj = np.array([x_adj, 1, z_adj])
             goal = drone_goals[i]
-            # traj_pos, traj_accel = generate_init_traj_quad(robots[i].state, cg+leftright*i*args.sd*pos_adj, Hbar+1, Tf=Tbar)
-            traj_pos, traj_accel = generate_init_traj_quad(robots[i].state, goal['center'], Hbar+1, Tf=Tbar)
+            # if drone is already in goal area then, set goal to be current pos
+            if np.linalg.norm(robots[i].state[0:3] - goal['center'])**2 <= goal['radius']**2:
+                traj_pos, traj_accel = generate_init_traj_quad(robots[i].state, robots[i].state[0:3], Hbar+1, Tf=Tbar)    
+            else:
+                traj_pos, traj_accel = generate_init_traj_quad(robots[i].state, goal['center'], Hbar+1, Tf=Tbar)
             init_u.append(traj_accel)
             init_traj.append(traj_pos)
 
@@ -191,10 +187,10 @@ for t in range(trials):
         Q = np.random.randn(n, n)   # variable for quadratic objective
         Q = Q.T @ Q  
         # seed_u = init_u      
+        fair_planner_time_start = time.time()
         obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, drone_goals, Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
         obj.solo_energies = solo_energies
         # print('Running Fair Planner at time {}'.format(H-Hbar))
-        fair_planner_time_start = time.time()
         try:
             seed_u, local_sols, fairness, converge_iter = obj.solve_distributed(init_u, steps=fair_dist_iter, dyn='quad')
             # seed_obj, seed_u = obj.solve_central(init_u, steps=fair_dist_iter)
@@ -207,6 +203,7 @@ for t in range(trials):
             # use solo trajs as ref
             seed_u = init_u
             fair_planner_solver_errors += 1
+            fair_planner_error = True
         runtimes_fair_planner.append(time.time() - fair_planner_time_start)
 
         # if t == 0 and Hbar == H:
@@ -227,12 +224,17 @@ for t in range(trials):
         #         rg = g['radius']
         #         goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
         #         goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+        #     for sId, s in starts.items():
+        #         cs = s['center']
+        #         rs = s['radius']
+        #         start_sphere = Sphere([cs[0], cs[1], cs[2]], rs)
+        #         start_sphere.plot_3d(ax, alpha=0.2, color='blue')
         #     plt.show()
 
         # print('Running Safety Planner at time {}'.format(H-Hbar))
+        safe_planner_time_start = time.time()
         obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, drone_goals, Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
         obj.solo_energies = solo_energies
-        safe_planner_time_start = time.time()
         try:
             if dist_nbf:
                 test_uis, all_Js, cbfs, clfs = obj.solve_distributed_nbf(seed_u, last_delta,
@@ -244,7 +246,7 @@ for t in range(trials):
                 cbf_values.append(cbfs)
                 clf_values.append(clfs)
             else:
-                final_u, cbf_value, clf_value, nbf_delta, h_os, h_cs, Vs = obj.solve_nbf(seed_u=seed_u, last_delta=last_delta, mpc=True, h_gamma=h_gamma, V_alpha=V_alpha)
+                final_u, cbf_value, clf_value, nbf_delta, h_os, h_cs, Vs, relaxed = obj.solve_nbf(seed_u=seed_u, last_delta=last_delta, mpc=True, h_gamma=h_gamma, V_alpha=V_alpha)
                 final_u = np.array(final_u)  # H, N, control_input    
                 final_u = final_u.transpose(1, 0, 2)  # N, H, control_input
                 cbf_values.append(cbf_value)
@@ -255,10 +257,21 @@ for t in range(trials):
                     cbf_obstacles.append(h_os)
                     cbf_separation.append(h_cs)
                     clf_reach.append(Vs)
+                if relaxed:
+                    relax_num += 1
         except Exception as e:
             print(e)
+            if 'relax' in str(e):
+                trial_error_after_relax = True
+                last_delta = None
             print('Cant find next step in trajectory at time {}'.format(H-Hbar))
             nbf_solver_errors += 1
+
+            # if infeasible, try using fair trajectories at this time
+            if dist_nbf:
+                final_u = seed_u[:,0,:]
+            else:
+                final_u = seed_u
             
             # print('Current Trajectories')
             # fig = plt.figure()
@@ -280,13 +293,12 @@ for t in range(trials):
             #     rg = g['radius']
             #     goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
             #     goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+            # for sId, s in starts.items():
+            #     cs = s['center']
+            #     rs = s['radius']
+            #     start_sphere = Sphere([cs[0], cs[1], cs[2]], rs)
+            #     start_sphere.plot_3d(ax, alpha=0.2, color='blue')
             # plt.show()
-
-            # if infeasible, try using fair trajectories at this time
-            if dist_nbf:
-                final_u = seed_u[:,0,:]
-            else:
-                final_u = seed_u
             trial_error = True
         runtimes_safe_planner.append(time.time() - safe_planner_time_start)
         
@@ -366,10 +378,16 @@ for t in range(trials):
         print('Hit Drone')
     
     if trial_error:
-        print('Error in Safety Planner')
+        print('Error in Safety Planner without relaxtion')
         trial_result += 10
+    if fair_planner_error:
+        print('Error in Fair Planner')
+        trial_result += 20
+    if trial_error_after_relax:
+        print('Error in Safety Planner after relaxtion')
+        trial_result += 50
 
-    trial_res = [t, trial_result, sol_energy, sol_fairness1, sol_fairness4, fair_planner_avg_runtime, safe_planner_avg_runtime]
+    trial_res = [t, trial_result, sol_energy, sol_fairness1, sol_fairness4, fair_planner_avg_runtime, safe_planner_avg_runtime, relax_num]
     with open('{}/trial_results.csv'.format(exp_dir), 'a') as file_obj:
         writer_obj = writer(file_obj)
         writer_obj.writerow(trial_res)
@@ -395,6 +413,11 @@ for t in range(trials):
     #     rg = g['radius']
     #     goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
     #     goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+    # for sId, s in starts.items():
+    #     cs = s['center']
+    #     rs = s['radius']
+    #     start_sphere = Sphere([cs[0], cs[1], cs[2]], rs)
+    #     start_sphere.plot_3d(ax, alpha=0.2, color='blue')
     # plt.savefig('{}/final_traj.png'.format(trial_dir))
     # plt.clf()
     # plt.show()
