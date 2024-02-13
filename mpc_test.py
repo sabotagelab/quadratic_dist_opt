@@ -396,40 +396,40 @@ for t in range(trials):
     final_trajectories = final_trajectories.transpose(1, 0, 2)  # N, H, positions
     
     # print('Figure Final Trajectories')
-    # fig = plt.figure()
-    # ax = fig.add_subplot(projection='3d')
-    # times = np.linspace(0, Tf, H)
-    # for i in range(N):
-    #     traj = final_trajectories[i]
-    #     ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
-    #     ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
-    # for obsId, obs in obstacles.items():
-    #     co = obs['center']
-    #     ro = obs['radius']
-    #     obs_sphere = Sphere([co[0], co[1], co[2]], ro)
-    #     obs_sphere.plot_3d(ax, alpha=0.2, color='red')
-    # for gId, g in goals.items():
-    #     cg = g['center']
-    #     rg = g['radius']
-    #     goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
-    #     goal_sphere.plot_3d(ax, alpha=0.2, color='green')
-    # for sId, s in starts.items():
-    #     cs = s['center']
-    #     rs = s['radius']
-    #     start_sphere = Sphere([cs[0], cs[1], cs[2]], rs)
-    #     start_sphere.plot_3d(ax, alpha=0.2, color='blue')
-    # plt.savefig('{}/final_traj.png'.format(trial_dir))
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+    times = np.linspace(0, Tf, H)
+    for i in range(N):
+        traj = final_trajectories[i]
+        ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
+        ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
+    for obsId, obs in obstacles.items():
+        co = obs['center']
+        ro = obs['radius']
+        obs_sphere = Sphere([co[0], co[1], co[2]], ro)
+        obs_sphere.plot_3d(ax, alpha=0.2, color='red')
+    for gId, g in goals.items():
+        cg = g['center']
+        rg = g['radius']
+        goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
+        goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+    for sId, s in starts.items():
+        cs = s['center']
+        rs = s['radius']
+        start_sphere = Sphere([cs[0], cs[1], cs[2]], rs)
+        start_sphere.plot_3d(ax, alpha=0.2, color='blue')
+    plt.savefig('{}/final_traj.png'.format(trial_dir))
     # plt.clf()
     # plt.show()
 
     # print("Figure CLF and CBF Values")
-    # fig, axs = plt.subplots(2)
-    # axs[0].plot(list(range(len(cbf_values))), cbf_values)
-    # axs[0].set_title('h_min')
-    # axs[1].plot(list(range(len(clf_values))), clf_values)
-    # axs[1].set_title('V_max')
-    # plt.savefig('{}/final_cbf_clf.png'.format(trial_dir))
-    # plt.clf()
+    fig, axs = plt.subplots(2)
+    axs[0].plot(list(range(len(cbf_values))), cbf_values)
+    axs[0].set_title('h_min')
+    axs[1].plot(list(range(len(clf_values))), clf_values)
+    axs[1].set_title('V_max')
+    plt.savefig('{}/final_cbf_clf.png'.format(trial_dir))
+    plt.clf()
 
     # Also plot delta values 
     # plt.plot(list(range(len(all_deltas))), all_deltas)
@@ -459,10 +459,10 @@ for t in range(trials):
         save_cbf_clf_vals = np.round(np.array([cbf_values, clf_values]), 3)
         np.savetxt('{}/cbf_clf_values.csv'.format(trial_dir), save_cbf_clf_vals.T, fmt='%f')
 
-        if N == 3:
-            np.savetxt('{}/ind_cbf_obstacles.csv'.format(trial_dir), np.array(cbf_obstacles), fmt='%f')
-            np.savetxt('{}/ind_cbf_separation.csv'.format(trial_dir), np.array(cbf_separation), fmt='%f')
-            np.savetxt('{}/ind_clf_reach.csv'.format(trial_dir), np.array(clf_reach), fmt='%f')
+        # if N == 3:
+        np.savetxt('{}/ind_cbf_obstacles.csv'.format(trial_dir), np.array(cbf_obstacles), fmt='%f')
+        np.savetxt('{}/ind_cbf_separation.csv'.format(trial_dir), np.array(cbf_separation), fmt='%f')
+        np.savetxt('{}/ind_clf_reach.csv'.format(trial_dir), np.array(clf_reach), fmt='%f')
             
             # plt.plot(list(range(len(cbf_obstacles))), cbf_obstacles)
             # plt.savefig('{}/ind_cbf_obstacles.png'.format(trial_dir))

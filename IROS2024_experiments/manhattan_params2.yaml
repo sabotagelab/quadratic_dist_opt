@@ -17,7 +17,7 @@
       hi: .001
       ho: .001
       hv: 1
-      step_size: 0.01
+      step_size: 0.001
       trade_param: 0.01
   obstacles:
     obs1:
@@ -28,7 +28,7 @@
       radius: .25
   goals:
     g1:
-      center: [2.4, 4.5, .25] #hells kitchen
+      center: [2.4, 5, .25] #hells kitchen
       radius: 0.25
     g2: 
       center: [2.5, 0, .25] #lower manhattan
@@ -59,8 +59,8 @@
       hi: .001
       ho: .001
       hv: 1
-      step_size: 0.01
-      trade_param: 0.002
+      step_size: 0.001
+      trade_param: 0.01
   obstacles:
     obs1:
       center: [2.75, 4, 0.0]  #empire state area
@@ -70,7 +70,7 @@
       radius: .25
   goals:
     g1:
-      center: [2.4, 4.5, .25] #hells kitchen
+      center: [2.4, 5, .25] #hells kitchen
       radius: 0.25
     g2: 
       center: [2.5, 0, .25] #lower manhattan
@@ -101,8 +101,8 @@
       hi: .001
       ho: .001
       hv: 1
-      step_size: 0.01
-      trade_param: 0.002
+      step_size: 0.001
+      trade_param: 0.01
   obstacles:
     obs1:
       center: [2.75, 4, 0.0]  #empire state area
@@ -112,7 +112,7 @@
       radius: .25
   goals:
     g1:
-      center: [2.4, 4.5, .25] #hells kitchen
+      center: [2.4, 5, .25] #hells kitchen
       radius: 0.25
     g2: 
       center: [2.5, 0, .25] #lower manhattan
@@ -143,8 +143,8 @@
       hi: .001
       ho: .001
       hv: 1
-      step_size: 0.01
-      trade_param: 0.002
+      step_size: 0.001
+      trade_param: 0.01
   obstacles:
     obs1:
       center: [2.75, 4, 0.0]  #empire state area
@@ -154,7 +154,7 @@
       radius: .25
   goals:
     g1:
-      center: [2.4, 4.5, .25] #hells kitchen
+      center: [2.4, 5, .25] #hells kitchen
       radius: 0.25
     g2: 
       center: [2.5, 0, .25] #lower manhattan
