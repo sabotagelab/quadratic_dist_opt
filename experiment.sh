@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# #SBATCH -t 3-12:30:00
-# #SBATCH -J fair_uam						  # name of job
-# #SBATCH -A hlab	  # name of my sponsored account, e.g. class or research group, NOT ONID!
-# #SBATCH -p athena								  # name of partition or queue
-# #SBATCH -o fairfly.out				  # name of output file for this submission script
-# #SBATCH -e fairfly.err				  # name of error file for this submission script
-# #SBATCH -c 28
-# #SBATCH --mem=75G
+#SBATCH -t 3-12:30:00
+#SBATCH -J fair_uam						  # name of job
+#SBATCH -A hlab	  # name of my sponsored account, e.g. class or research group, NOT ONID!
+#SBATCH -p athena								  # name of partition or queue
+#SBATCH -o fairfly.out				  # name of output file for this submission script
+#SBATCH -e fairfly.err				  # name of error file for this submission script
+#SBATCH -c 28
+#SBATCH --mem=75G
 
-# source /nfs/stak/users/frondan/.bashrc
-# conda activate quad_dist_opt
+source /nfs/stak/users/frondan/.bashrc
+conda activate quad_dist_opt
 
 # central
 python mpc_test.py --exp_dir /3_central_fair_notion0 --trials 5 --notion 0 --N 3 --exp_params IROS2024_experiments/manhattan_params2.yaml
