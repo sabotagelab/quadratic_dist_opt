@@ -4,12 +4,12 @@ from scipy.optimize import Bounds, basinhopping, minimize, NonlinearConstraint
 from generate_trajectories import generate_agent_states, generate_init_traj_quad
 
 EPS = 1e-8
-CP_SOLVER='MOSEK' #'ECOS'
+CP_SOLVER='ECOS' # 'MOSEK' #
 SCIPY_SOLVER='SLSQP' #'L-BFGS-B' #
 
 class Objective():
     def __init__(self, N, H, system_model_config, init_states, init_pos, obstacles, targets, \
-        Q, alpha, kappa, eps_bounds, Ubox, dt=0.1, notion=0, safe_dist=0.1):
+        starts, Q, alpha, kappa, eps_bounds, Ubox, dt=0.1, notion=0, safe_dist=0.1):
         self.N = N
         self.H = H
         self.system_model = system_model_config[0]
@@ -25,6 +25,9 @@ class Objective():
         self.Ubox = Ubox
         self.safe_dist = safe_dist
         self.dt = dt
+        self.starts = starts
+        self.goals_made = 0
+        self.dist_to_goal = []
 
         self.heterogeneous = False
         
@@ -147,13 +150,15 @@ class Objective():
         for i in range(self.N):
             curr_agent_u = u.reshape((self.N, self.H, control_input_size))[i].flatten()
             if self.notion in [0, 3]:  ## the basic fairness notion, uTQu + f1 (or uTQu + surge fairness)
-                fairness_value = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i]
+                # fairness_value = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i]
+                fairness_value = self.alpha * grad_quad[i] + grad_fairness[i]
             elif self.notion == 1:  # no fairness, uTQu only
                 fairness_value = self.alpha * grad_quad[i]
             elif self.notion == 2:  # no fairness, no uTQu term
                 fairness_value = np.zeros(self.H*control_input_size)
             else:  # f1 or f2 only  (ie self.notion in [4, 5])
-                fairness_value = np.ones(self.H*control_input_size) * self.alpha * grad_fairness[i]
+                # fairness_value = np.ones(self.H*control_input_size) * self.alpha * grad_fairness[i]
+                fairness_value = np.ones(self.H*control_input_size) * grad_fairness[i]
 
             grad = fairness_value
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
@@ -261,17 +266,21 @@ class Objective():
     
     def central_obj(self, u):
         if self.notion == 0:  ## the basic fairness notion, uTQu + f1
-            fairness_value = self.alpha * self.quad(u) + self.alpha * self.fairness(u)
+            # fairness_value = self.alpha * self.quad(u) + self.alpha * self.fairness(u)
+            fairness_value = self.alpha * self.quad(u) + self.fairness(u)
         elif self.notion == 1:  ## no fairness, uTQu only
             fairness_value = self.alpha * self.quad(u)
         elif self.notion in [2, 20]:  # no fairness, no uTQu term
             fairness_value = 0
         elif self.notion == 3:  # use surge fairness 
-            fairness_value =  self.alpha * self.quad(u) + self.alpha * self.surge_fairness(u)
+            # fairness_value = self.alpha * self.quad(u) + self.alpha * self.surge_fairness(u)
+            fairness_value =  self.alpha * self.quad(u) + self.surge_fairness(u)
         elif self.notion == 4:  #f1 only
-            fairness_value = self.alpha * self.fairness(u)
+            # fairness_value = self.alpha * self.fairness(u)
+            fairness_value = self.fairness(u)
         else:  # f2 only)
-            fairness_value = self.alpha * self.surge_fairness(u)
+            # fairness_value = self.alpha * self.surge_fairness(u)
+            fairness_value = self.surge_fairness(u)
 
         return fairness_value
 
@@ -317,11 +326,16 @@ class Objective():
         control_input_size = self.control_input_size
 
         u_reshape = u.reshape((self.N, self.H, control_input_size))
-        agent_sum_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1) / (np.array(self.solo_energies) + EPS)
-        mean_energy = np.mean(agent_sum_energies)
+        # agent_norm_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1) / (np.array(self.solo_energies) + EPS)
+        agent_norm_energies = (np.linalg.norm(u_reshape, axis=(1,2))**2) / (np.array(self.solo_energies) + EPS)
+        mean_energy = np.mean(agent_norm_energies)
+        mean_energy_magnitude = int(np.floor(np.log10(mean_energy)))
+        agent_norm_energies = agent_norm_energies * 10**(-mean_energy_magnitude)
+            
+        mean_energy = np.mean(agent_norm_energies)
         diffs = 0
         for i in range(self.N):
-            diffs += (np.linalg.norm(agent_sum_energies[i] - mean_energy)) ** 2
+            diffs += (np.linalg.norm(agent_norm_energies[i] - mean_energy)) ** 2
     
         fairness = 1/(self.N) * np.sum(diffs)
         return fairness
@@ -330,11 +344,16 @@ class Objective():
         control_input_size = self.control_input_size
 
         u_reshape = u.reshape((self.N, self.H, control_input_size))
-        agent_sum_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1) / (np.array(self.solo_energies) + EPS)
-        mean_energy = np.mean(agent_sum_energies)
+        # agent_norm_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1) / (np.array(self.solo_energies) + EPS)
+        agent_norm_energies = (np.linalg.norm(u_reshape, axis=(1,2))**2) / (np.array(self.solo_energies) + EPS)
+        mean_energy = np.mean(agent_norm_energies)
+        mean_energy_magnitude = int(np.floor(np.log10(mean_energy)))
+        # scale down magnitude
+        agent_norm_energies = agent_norm_energies * 10**(-mean_energy_magnitude)
+        mean_energy = np.mean(agent_norm_energies)
         partials = []
         for i in range(self.N):
-            grad = 2 * (1/self.N) * (np.linalg.norm(agent_sum_energies[i] - mean_energy))
+            grad = 2 * (1/self.N) * (np.linalg.norm(agent_norm_energies[i] - mean_energy))
             partials.append(grad)
             
         return partials
@@ -346,13 +365,17 @@ class Objective():
         else:
             return self._surge_fairness_central(u)
 
-    # TODO: NORMALIZE SURGE FAIRNESS ???
     def _surge_fairness_central(self, u):
         control_input_size = self.control_input_size
 
         u_reshape = u.reshape((self.N, self.H, control_input_size))
         energies = np.linalg.norm(u_reshape, axis=2)**2
-        agent_mean_energies = np.mean(energies, axis=1)
+        
+        # scale down magnitude
+        agent_mean_energies = np.mean(energies)
+        mean_energy_magnitude = int(np.floor(np.log10(agent_mean_energies)))
+        energies = energies * 10**(-mean_energy_magnitude)
+        
         surges = np.diff(energies)
         surges = surges - np.min(surges) / (np.max(surges) - np.min(surges))
         surge_thresh = np.mean(surges) + np.std(surges)
@@ -369,21 +392,24 @@ class Objective():
 
         u_reshape = u.reshape((self.N, self.H, control_input_size))
         energies = np.linalg.norm(u_reshape, axis=2)**2
-        agent_mean_energies = np.mean(energies, axis=1)
+        
+        # scale down magnitude
+        agent_mean_energies = np.mean(energies)
+        mean_energy_magnitude = int(np.floor(np.log10(agent_mean_energies)))
+        energies = energies * 10**(-mean_energy_magnitude)
+        
         surges = np.diff(energies)
         surges = surges - np.min(surges) / (np.max(surges) - np.min(surges))
         surge_thresh = np.mean(surges) + np.std(surges)
 
         agent_total_over_surge = []
-        sk_div = []
         for i in range(self.N):
             agent_total_over_surge.append(np.sum(surges[i] - surge_thresh))
-            sk_div.append(2*(np.linalg.norm(u_reshape[i][self.H-1]) - np.linalg.norm(u_reshape[i][0])))
         
         mean_agent_surge = np.mean(agent_total_over_surge)
         partials = []
         for i in range(self.N):
-            grad = 2 * (1/self.N) * (agent_total_over_surge[i] - mean_agent_surge) * sk_div[i]
+            grad = 2 * (1/self.N) * (agent_total_over_surge[i] - mean_agent_surge)
             partials.append(grad)   
 
         return partials
@@ -420,10 +446,13 @@ class Objective():
         drone_reach = 0
         if not avoid_only:
             cg = self.targets[drone_id]['center']
-            rg = self.targets[drone_id]['radius']
+            rg = self.targets[drone_id]['radius'] + 0.4
             distance_to_target = np.linalg.norm(final_p - cg)
             if distance_to_target > rg:
                 drone_reach = 1
+                self.dist_to_goal.append(distance_to_target)
+            else:
+                self.goals_made += 1
 
         drone_hit_reach = max(drone_hit, drone_reach)
 
@@ -453,7 +482,7 @@ class Objective():
     
         u_t = cp.Variable(self.N*self.control_input_size)
         delta = cp.Variable(1)
-        # delta = cp.Variable(self.N)
+        # w = cp.Variable(1)
         
         # Create Quad systems for each 
         robots = []
@@ -464,8 +493,8 @@ class Objective():
         if seed_u is not None:
             u_fair_t = cp.Parameter((self.N*self.control_input_size), 
                                     value=np.zeros(self.N*self.control_input_size))
+            # objective = cp.Minimize(cp.sum_squares(u_t - u_fair_t) + delta**2 + w)
             objective = cp.Minimize(cp.sum_squares(u_t - u_fair_t) + delta**2)
-            # objective = cp.Minimize(cp.sum_squares(u_t - u_fair_t) + cp.sum_squares(delta))
         else:
             u_ref_t = cp.Parameter((self.N*self.control_input_size), 
                                    value=np.zeros(self.N*self.control_input_size))
@@ -484,7 +513,8 @@ class Objective():
                     continue
                 kx = 0.7
                 kv = 1.8 if self.N < 10 else 1.6 if self.N in [10, 15] else 1.5
-                rn = self.rn[r]
+                # rn = self.rn[r]
+                rn = 0
                 leftright = 1 if r % 2 == 0 else -1
                 x_adj = 1 if r % 2 == 0 else 0
                 z_adj = 1 if (r % 3 == 0) and self.N >= 10 else 0
@@ -544,6 +574,13 @@ class Objective():
                 C.append(Crow)
                 
                 # mutual separation
+                drone_start = self.starts[r]
+                dsc = drone_start['center']
+                dsr = drone_start['radius']
+                dist_from_start = (pos[0] - dsc[0])**2 + (pos[1] - dsc[1])**2 + (pos[2] - dsc[2])**2
+                if (dist_from_start <= dsr**2 or V <= 0):
+                    # print('still in start, continuing')
+                    continue
                 for s in range(r+1, self.N):
                     pos1 = robots[s].state[0:3]
                     h_c = (pos[0] - pos1[0])**2 + (pos[1] - pos1[1])**2 + (pos[2] - pos1[2])**2 - self.safe_dist**2
@@ -555,12 +592,14 @@ class Objective():
                     Arow_mid = [0 for i in range((r+1)*6, s*6)]
                     Arow_end = [0 for i in range((s+1)*6, self.N*6)]
                     Arow = Arow_start + deriv + Arow_mid + nderiv + Arow_end
-                    A.append(Arow)
+                    # A.append(Arow)
+                    B.append(Arow)
 
             h_min = np.min([h_c_min, h_o_min])
             B = np.array(B)
             Lfh1 = np.dot(np.dot(f_diag, np.array(state_collect).flatten()), B.T) 
             Lgh1_u = np.dot(B, g_diag) @ u_t
+            # constraints.append(Lfh1 + Lgh1_u + h_gamma*h_min - w >= 0) 
             constraints.append(Lfh1 + Lgh1_u + h_gamma*h_min >= 0) 
 
             C = np.array(C)
@@ -568,12 +607,13 @@ class Objective():
             LgV_u = np.dot(C, g_diag) @ u_t
             constraints.append(LfV + LgV_u + V_alpha*V_max <= delta) 
 
-            if self.N > 1:
-                A = np.array(A)
-                Lfh2 = np.dot(np.dot(f_diag, np.array(state_collect).flatten()), A.T) 
-                Lgh2_u = np.dot(A, g_diag) @ u_t
-                constraints.append(Lfh2 + Lgh2_u + h_gamma*h_min >= 0) 
+            # if self.N > 1:
+            #     A = np.array(A)
+            #     Lfh2 = np.dot(np.dot(f_diag, np.array(state_collect).flatten()), A.T) 
+            #     Lgh2_u = np.dot(A, g_diag) @ u_t
+            #     constraints.append(Lfh2 + Lgh2_u + h_gamma*h_min >= 0) 
 
+            # constraints.append(w >= 0)
             # Ubox constraint
             constraints.append(-1 * self.Ubox <= u_t)
             constraints.append(u_t <= self.Ubox)
@@ -591,7 +631,9 @@ class Objective():
                 print(f"QP infeasible")
                 if last_delta is not None:
                     print(f"attempting relaxation")
-                    constraints.pop()
+                    constraints.pop() #delta constraint
+                    constraints.pop() #ubox constraint
+                    constraints.pop() #ubox constraint
                     cbf_controller = cp.Problem(objective, constraints)
                     cbf_controller.solve(solver=CP_SOLVER)
                     relaxed = True
@@ -599,7 +641,16 @@ class Objective():
                         print(f"Relaxed problem also infeasible")
                         raise Exception('Central Safe Problem Infeasible after relaxation')
                 else:
-                    raise Exception('Central Safe Problem Infeasible')
+                    print(f"attempting relaxation")
+                    constraints.pop() #ubox constraint
+                    constraints.pop() #ubox constraint
+                    cbf_controller = cp.Problem(objective, constraints)
+                    cbf_controller.solve(solver=CP_SOLVER)
+                    relaxed = True
+                    if cbf_controller.status in ['infeasible', 'infeasible_inaccurate']:
+                        print(f"Relaxed problem also infeasible")
+                        raise Exception('Central Safe Problem Infeasible after relaxation')
+                    # raise Exception('Central Safe Problem Infeasible')
             
             for r in range(self.N):
                 idx_start = r*self.control_input_size
@@ -833,7 +884,7 @@ class Objective():
 
         # let network parameter wij be 1/N-1 (ie one over all neighbors) for all neighbors
         wij = 1 / (self.N - 1)
-        rho = 1.1 * step_size * trade_param / wij
+        rho = 1.5 * step_size * trade_param / wij
 
         ui_full = current_inputs[agent_id]
 

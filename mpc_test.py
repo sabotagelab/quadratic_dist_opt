@@ -15,7 +15,7 @@ import yaml
 
 
 EPS = 1e-2
-np.random.seed(43)
+np.random.seed(42)
 
 parser = argparse.ArgumentParser(description='Optimization')
 # MAIN VARIABLES
@@ -93,6 +93,7 @@ for t in range(trials):
 
     init_pos = []
     init_states = []
+    drone_starts = []
     drone_goals = []
     cbf_obstacles = []
     cbf_separation = []
@@ -112,8 +113,13 @@ for t in range(trials):
         s.append(np.array([0, 0, 0]))  # velo
         init_states.append(np.array(s).flatten())
 
-        # Also Pick a Random goal
+        # # Also Pick a Random goal
+        # if start == 'a1':
+        #     goal = 'g2'
+        # else:
+        #     goal = 'g1'
         goal = np.random.choice(list(goals.keys()))
+        drone_starts.append(starts[start])
         drone_goals.append(goals[goal])
     orig_init_states = list(init_states)
     orig_init_pos = list(init_pos)
@@ -188,7 +194,7 @@ for t in range(trials):
         Q = Q.T @ Q  
         # seed_u = init_u      
         fair_planner_time_start = time.time()
-        obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, drone_goals, Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
+        obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, drone_goals, drone_starts,  Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
         obj.solo_energies = solo_energies
         # print('Running Fair Planner at time {}'.format(H-Hbar))
         try:
@@ -206,7 +212,7 @@ for t in range(trials):
             fair_planner_error = True
         runtimes_fair_planner.append(time.time() - fair_planner_time_start)
 
-        # if t == 0 and Hbar == H:
+        # if t == 0 and ((Hbar - H) % 5 == 0):
         #     print('Figure For Fair Trajectories')
         #     fig = plt.figure()
         #     ax = fig.add_subplot(projection='3d')
@@ -233,8 +239,9 @@ for t in range(trials):
 
         # print('Running Safety Planner at time {}'.format(H-Hbar))
         safe_planner_time_start = time.time()
-        obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, drone_goals, Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
+        obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, drone_goals, drone_starts, Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
         obj.solo_energies = solo_energies
+        # final_u = seed_u
         try:
             if dist_nbf:
                 test_uis, all_Js, cbfs, clfs = obj.solve_distributed_nbf(seed_u, last_delta,
@@ -253,13 +260,19 @@ for t in range(trials):
                 clf_values.append(clf_value)
                 last_delta = nbf_delta
                 all_deltas.append(last_delta)
-                if N == 3:
-                    cbf_obstacles.append(h_os)
-                    cbf_separation.append(h_cs)
-                    clf_reach.append(Vs)
+                
+                cbf_obstacles.append(h_os)
+                if len(h_cs) < (int(N*(N-1)/2)+1):
+                    for ex in range(len(h_cs), (int(N*(N-1)/2))):
+                        h_cs.append(0)
+                cbf_separation.append(h_cs)
+                clf_reach.append(Vs)
+                
                 if relaxed:
                     relax_num += 1
         except Exception as e:
+            cbf_values.append(np.nan)
+            clf_values.append(np.nan)
             print(e)
             if 'relax' in str(e):
                 trial_error_after_relax = True
@@ -267,20 +280,13 @@ for t in range(trials):
             print('Cant find next step in trajectory at time {}'.format(H-Hbar))
             nbf_solver_errors += 1
 
-            # if infeasible, try using fair trajectories at this time
-            if dist_nbf:
-                final_u = seed_u[:,0,:]
-            else:
-                final_u = seed_u
-            
-            # print('Current Trajectories')
             # fig = plt.figure()
             # ax = fig.add_subplot(projection='3d')
-            # times = np.linspace(0, Tf, H-Hbar)
-            # tmp_final_trajectories = np.array(final_trajectories)
-            # tmp_final_trajectories = tmp_final_trajectories.transpose(1, 0, 2)  # N, H, positions
+            # times = np.linspace(0, Tf, H)
+            # temp_trajectories = np.array(final_trajectories)
+            # temp_trajectories = temp_trajectories.transpose(1, 0, 2)  # N, H, positions
             # for i in range(N):
-            #     traj = tmp_final_trajectories[i]
+            #     traj = temp_trajectories[i]
             #     ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
             #     ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
             # for obsId, obs in obstacles.items():
@@ -299,7 +305,14 @@ for t in range(trials):
             #     start_sphere = Sphere([cs[0], cs[1], cs[2]], rs)
             #     start_sphere.plot_3d(ax, alpha=0.2, color='blue')
             # plt.show()
+
+            # if infeasible, try using fair trajectories at this time
+            if dist_nbf:
+                final_u = seed_u[:,0,:]
+            else:
+                final_u = seed_u
             trial_error = True
+
         runtimes_safe_planner.append(time.time() - safe_planner_time_start)
         
         Tbar = Tf - (H-Hbar)*Tf/H
@@ -323,7 +336,7 @@ for t in range(trials):
         init_states = new_states
         init_pos = new_poses
 
-        # if t == 0:
+        # if t == 0 and ((Hbar - H) % 5 == 0):
         #     print('Figure For Safe Trajectories')
         #     fig = plt.figure()
         #     ax = fig.add_subplot(projection='3d')
@@ -349,7 +362,7 @@ for t in range(trials):
     n = N*H*control_input_size
     Q = np.random.randn(n, n)   # variable for quadratic objective
     Q = Q.T @ Q
-    obj = Objective(N, H, system_model_config, orig_init_states, orig_init_pos, obstacles, drone_goals, Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
+    obj = Objective(N, H, system_model_config, orig_init_states, orig_init_pos, obstacles, drone_goals, drone_starts, Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
     obj.solo_energies = solo_energies
 
     final_us = np.array(final_us)
@@ -363,6 +376,11 @@ for t in range(trials):
 
     fair_planner_avg_runtime = np.round(np.mean(runtimes_fair_planner), 3)
     safe_planner_avg_runtime = np.round(np.mean(runtimes_safe_planner), 3)
+    goals_made = obj.goals_made
+    if goals_made < N:
+        max_missed_distance = np.round(np.mean(obj.dist_to_goal), 3)
+    else:
+        max_missed_distance = 0
 
     if trial_result == 0:
         successful_trials += 1
@@ -387,7 +405,7 @@ for t in range(trials):
         print('Error in Safety Planner after relaxtion')
         trial_result += 50
 
-    trial_res = [t, trial_result, sol_energy, sol_fairness1, sol_fairness4, fair_planner_avg_runtime, safe_planner_avg_runtime, relax_num]
+    trial_res = [t, trial_result, sol_energy, sol_fairness1, sol_fairness4, fair_planner_avg_runtime, safe_planner_avg_runtime, relax_num, goals_made, max_missed_distance]
     with open('{}/trial_results.csv'.format(exp_dir), 'a') as file_obj:
         writer_obj = writer(file_obj)
         writer_obj.writerow(trial_res)
@@ -411,7 +429,7 @@ for t in range(trials):
     for gId, g in goals.items():
         cg = g['center']
         rg = g['radius']
-        goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
+        goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg + 0.4)
         goal_sphere.plot_3d(ax, alpha=0.2, color='green')
     for sId, s in starts.items():
         cs = s['center']
@@ -419,7 +437,8 @@ for t in range(trials):
         start_sphere = Sphere([cs[0], cs[1], cs[2]], rs)
         start_sphere.plot_3d(ax, alpha=0.2, color='blue')
     plt.savefig('{}/final_traj.png'.format(trial_dir))
-    # plt.clf()
+    plt.clf()
+    plt.close()
     # plt.show()
 
     # print("Figure CLF and CBF Values")
@@ -430,6 +449,7 @@ for t in range(trials):
     axs[1].set_title('V_max')
     plt.savefig('{}/final_cbf_clf.png'.format(trial_dir))
     plt.clf()
+    plt.close()
 
     # Also plot delta values 
     # plt.plot(list(range(len(all_deltas))), all_deltas)
