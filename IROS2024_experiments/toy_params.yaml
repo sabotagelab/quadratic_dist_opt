@@ -1,6 +1,6 @@
 3:
   Tf: 1
-  H: 20  # 20 for N=3,5 25 for N = 7 (for Central Safe Planner)
+  H: 3  # 20 for N=3,5 25 for N = 7 (for Central Safe Planner)
   sd: 0.01
   Ubox: 300
   fair_planner:
@@ -8,7 +8,7 @@
     distributed:
       kappa: 500
       eps_bounds: 100
-      iter: 1000
+      iter: 1
   safe_planner:
     central:
       h_gamma: 50

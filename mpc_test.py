@@ -192,24 +192,44 @@ for t in range(trials):
         n = N*Hbar*control_input_size
         Q = np.random.randn(n, n)   # variable for quadratic objective
         Q = Q.T @ Q  
-        # seed_u = init_u      
+        seed_u = init_u      
         fair_planner_time_start = time.time()
-        obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, drone_goals, drone_starts,  Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
-        obj.solo_energies = solo_energies
-        # print('Running Fair Planner at time {}'.format(H-Hbar))
-        try:
-            seed_u, local_sols, fairness, converge_iter = obj.solve_distributed(init_u, steps=fair_dist_iter, dyn='quad')
-            # seed_obj, seed_u = obj.solve_central(init_u, steps=fair_dist_iter)
-            seed_u = np.array(seed_u).reshape((N, Hbar, control_input_size))
+        if notion != 2:
+            obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, drone_goals, drone_starts,  Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
+            obj.solo_energies = solo_energies
+            # print('Running Fair Planner at time {}'.format(H-Hbar))
+            try:
+                seed_u, local_sols, fairness, converge_iter = obj.solve_distributed(init_u, steps=fair_dist_iter, dyn='quad')
+                # seed_obj, seed_u = obj.solve_central(init_u, steps=fair_dist_iter)
+                seed_u = np.array(seed_u).reshape((N, Hbar, control_input_size))
 
-        except Exception as e:
-            print(e)
-            print('Fair Planner error at time {}'.format(H-Hbar))
+                # if dist_nbf:
+                if Hbar == H:
+                    fair_us = np.array(seed_u)
+                    fair_drone_results = obj.check_avoid_constraints(fair_us)
+                    fair_trial_result = max(fair_drone_results)
 
-            # use solo trajs as ref
-            seed_u = init_u
-            fair_planner_solver_errors += 1
-            fair_planner_error = True
+                    fair_sol_energy = np.round(obj.quad(fair_us.flatten()), 3)
+                    fair_sol_fairness1 = np.round(obj.fairness(fair_us.flatten()), 3)
+                    fair_sol_fairness4 = np.round(obj.surge_fairness(fair_us.flatten()), 3)
+
+                    fair_trial_res = [t, fair_trial_result, fair_sol_energy, fair_sol_fairness1, fair_sol_fairness4]
+                    with open('{}/trial_results_init_fair_sol.csv'.format(exp_dir), 'a') as file_obj:
+                        writer_obj = writer(file_obj)
+                        writer_obj.writerow(fair_trial_res)
+
+            except Exception as e:
+                print(e)
+                print('Fair Planner error at time {}'.format(H-Hbar))
+
+                # use solo trajs as ref
+                seed_u = init_u
+                # if Hbar == H:
+                #     seed_u = init_u
+                # else:
+                #     seed_u = seed_u[:, 1:, ]
+                fair_planner_solver_errors += 1
+                fair_planner_error = True
         runtimes_fair_planner.append(time.time() - fair_planner_time_start)
 
         # if t == 0 and ((Hbar - H) % 5 == 0):
@@ -245,7 +265,7 @@ for t in range(trials):
         try:
             if dist_nbf:
                 test_uis, all_Js, cbfs, clfs = obj.solve_distributed_nbf(seed_u, last_delta,
-                    h_i=h_i, h_o=h_o, h_v=h_v, step_size=nbf_dist_step_size, trade_param=nbf_dist_trade_param)
+                    h_i=h_i, h_o=h_o, h_v=h_v, step_size=nbf_dist_step_size, trade_param=nbf_dist_trade_param, steps=fair_dist_iter)
                 final_u = test_uis[:,0:3]
                 last_delta = test_uis[:,3]
                 all_deltas.append(last_delta)
@@ -359,6 +379,16 @@ for t in range(trials):
         #         goal_sphere.plot_3d(ax, alpha=0.2, color='green')
         #     plt.show()
 
+    # if dist_nbf:
+    #     # print('plot J values of first iteration')
+    #     plt.plot(list(range(len(all_J_sequences[0]))), all_J_sequences[0])
+    #     plt.savefig('{}/dist_cost_init.png'.format(trial_dir))
+    #     plt.clf()
+
+    #     plt.plot(list(range(len(all_J_sequences[-1]))), all_J_sequences[-1])
+    #     plt.savefig('{}/dist_cost.png'.format(trial_dir))
+    #     plt.clf()
+
     n = N*H*control_input_size
     Q = np.random.randn(n, n)   # variable for quadratic objective
     Q = Q.T @ Q
@@ -442,25 +472,19 @@ for t in range(trials):
     # plt.show()
 
     # print("Figure CLF and CBF Values")
-    fig, axs = plt.subplots(2)
-    axs[0].plot(list(range(len(cbf_values))), cbf_values)
-    axs[0].set_title('h_min')
-    axs[1].plot(list(range(len(clf_values))), clf_values)
-    axs[1].set_title('V_max')
-    plt.savefig('{}/final_cbf_clf.png'.format(trial_dir))
-    plt.clf()
-    plt.close()
+    # fig, axs = plt.subplots(2)
+    # axs[0].plot(list(range(len(cbf_values))), cbf_values)
+    # axs[0].set_title('h_min')
+    # axs[1].plot(list(range(len(clf_values))), clf_values)
+    # axs[1].set_title('V_max')
+    # plt.savefig('{}/final_cbf_clf.png'.format(trial_dir))
+    # plt.clf()
+    # plt.close()
 
     # Also plot delta values 
     # plt.plot(list(range(len(all_deltas))), all_deltas)
     # plt.savefig('{}/deltas.png'.format(trial_dir))
     # plt.clf()
-
-    # if dist_nbf:
-    #     print('plot J values of first iteration')
-    #     plt.plot(list(range(len(all_J_sequences[0]))), all_J_sequences[0])
-    #     plt.savefig('{}/dist_cost.png'.format(trial_dir))
-    #     plt.clf()
 
     # SAVE FINAL TRAJ
     final_trajectories = np.round(final_trajectories.reshape((N, H*3+3)), 3)

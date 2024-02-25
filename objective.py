@@ -3,6 +3,8 @@ import numpy as np
 from scipy.optimize import Bounds, basinhopping, minimize, NonlinearConstraint
 from generate_trajectories import generate_agent_states, generate_init_traj_quad
 
+import warnings
+
 EPS = 1e-8
 CP_SOLVER='ECOS' # 'MOSEK' #
 SCIPY_SOLVER='SLSQP' #'L-BFGS-B' #
@@ -329,7 +331,10 @@ class Objective():
         # agent_norm_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1) / (np.array(self.solo_energies) + EPS)
         agent_norm_energies = (np.linalg.norm(u_reshape, axis=(1,2))**2) / (np.array(self.solo_energies) + EPS)
         mean_energy = np.mean(agent_norm_energies)
-        mean_energy_magnitude = int(np.floor(np.log10(mean_energy)))
+        if mean_energy == 0:
+            mean_energy_magnitude = 0
+        else:
+            mean_energy_magnitude = int(np.floor(np.log10(mean_energy)))
         agent_norm_energies = agent_norm_energies * 10**(-mean_energy_magnitude)
             
         mean_energy = np.mean(agent_norm_energies)
@@ -347,7 +352,10 @@ class Objective():
         # agent_norm_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1) / (np.array(self.solo_energies) + EPS)
         agent_norm_energies = (np.linalg.norm(u_reshape, axis=(1,2))**2) / (np.array(self.solo_energies) + EPS)
         mean_energy = np.mean(agent_norm_energies)
-        mean_energy_magnitude = int(np.floor(np.log10(mean_energy)))
+        if mean_energy == 0:
+            mean_energy_magnitude = 0
+        else:
+            mean_energy_magnitude = int(np.floor(np.log10(mean_energy)))
         # scale down magnitude
         agent_norm_energies = agent_norm_energies * 10**(-mean_energy_magnitude)
         mean_energy = np.mean(agent_norm_energies)
@@ -373,7 +381,11 @@ class Objective():
         
         # scale down magnitude
         agent_mean_energies = np.mean(energies)
-        mean_energy_magnitude = int(np.floor(np.log10(agent_mean_energies)))
+        if agent_mean_energies == 0:
+            mean_energy_magnitude = 0
+        else:
+            mean_energy_magnitude = int(np.floor(np.log10(agent_mean_energies)))
+
         energies = energies * 10**(-mean_energy_magnitude)
         
         surges = np.diff(energies)
@@ -395,7 +407,10 @@ class Objective():
         
         # scale down magnitude
         agent_mean_energies = np.mean(energies)
-        mean_energy_magnitude = int(np.floor(np.log10(agent_mean_energies)))
+        if agent_mean_energies == 0:
+            mean_energy_magnitude = 0
+        else:
+            mean_energy_magnitude = int(np.floor(np.log10(agent_mean_energies)))
         energies = energies * 10**(-mean_energy_magnitude)
         
         surges = np.diff(energies)
@@ -665,7 +680,7 @@ class Objective():
     ##########################################################
     # Distributed Version of Online Solution (MPC only)
     ###########################################################
-    def solve_distributed_nbf(self, seed_input, last_deltas, h_i=1, h_o=1, h_v=1, step_size=0.01, trade_param=0.8):
+    def solve_distributed_nbf(self, seed_input, last_deltas, h_i=1, h_o=1, h_v=1, step_size=0.01, trade_param=0.8, steps=1000):
 
         # Keep only first time step of seed_input
         seed_input = seed_input[:, 0, :]
@@ -708,7 +723,7 @@ class Objective():
         agent_alg1_running = [True for i in range(self.N)]
         all_Js = []
         for p in range(100):
-            if not any(agent_alg1_running):
+            if not all(agent_alg1_running):
                 break
             # use to get all current phi_i for this iteration
             _, agent_phi_i = self.trades_sigma(uis, seed_input, grad=False, return_all=True)  
@@ -718,12 +733,12 @@ class Objective():
             new_yis = []
             for i in range(self.N):
                 if agent_alg1_running[i]:
-                    # Compute lines 3-6 of Alg 1
+                # Compute lines 3-6 of Alg 1
                     ui_p, lambda_p, zi_p, yi_p = self.trades(i, uis, seed_input, last_deltas[i], agent_Ais, agent_bis, agent_phi_i, 
                                                             lambdas, zis, yis, step_size=step_size, trade_param=trade_param)
                     # Check convergence criteria
                     cur_delta = np.maximum(np.linalg.norm(ui_p - uis[i]),
-                                           np.linalg.norm(lambda_p - lambdas[i]))
+                                            np.linalg.norm(lambda_p - lambdas[i]))
                     last_deltas[i] = cur_delta
                     if cur_delta < 0.1:
                         agent_alg1_running[i] = False
@@ -848,7 +863,6 @@ class Objective():
 
         return gammas, Ai, bi, cbf_val, clf_val
     
-    # def trades_sigma(self, proposed_inputs, target_positions, grad=False, return_all=False):
     def trades_sigma(self, proposed_inputs, fair_inputs, grad=False, return_all=False):
         # the aggregative vector for the cost function J, which is the average distance to fair inputs
         if grad:
@@ -892,8 +906,8 @@ class Objective():
         F_i = self.trades_F_i(ui_full, seed_input[agent_id], phi[agent_id] + zis[agent_id])
         
         # Compute Pseudo gradiant of constraints
-        G_ui = self.trades_G_i_primal(ui_full, Ais[agent_id], bis[agent_id] + yis[agent_id], lambdas[agent_id], rho)
-        G_lambi = self.trades_G_i_dual(ui_full, Ais[agent_id], bis[agent_id] + yis[agent_id], lambdas[agent_id], rho)
+        G_ui = self.trades_G_i_primal(ui_full, Ais[agent_id], bis[agent_id], yis[agent_id], lambdas[agent_id], rho)
+        G_lambi = self.trades_G_i_dual(ui_full, Ais[agent_id], bis[agent_id], yis[agent_id], lambdas[agent_id], rho)
         
         # compute ui_p (line 3)
         ui_p = ui_full + trade_param * (self.projection(ui_full - step_size * F_i - step_size * G_ui, last_delta) - ui_full)
@@ -919,7 +933,7 @@ class Objective():
         if grad:
             # THE PSEUDO GRADIENT OF OBJECTIVE FUNCTION
             # first is gradient with respect to first argument, the agent's inputs, which is the derivative of agent's distance to seed inputs
-            partial_1 = 2 * np.linalg.norm(agent_proposed_input[0:4] - agent_seed_input[0:4])
+            partial_1 = 2 * np.linalg.norm(agent_proposed_input[0:4] - agent_seed_input[0:4]) + 1/self.N
             # second is gradient with respect to second argument, the aggregate, which is just 1
             partial_2 = 1
             return partial_1, partial_2
@@ -933,30 +947,31 @@ class Objective():
         partial_phi_i = self.trades_phi_i(agent_proposed_input, agent_seed_input, grad=True)
         return partial_1_J_i + (partial_phi_i / self.N) * partial_2_j_i
 
-    def trades_G_i_primal(self, agent_proposed_input, Ai, bi, lambda_i, rho):
+    def trades_G_i_primal(self, agent_proposed_input, Ai, bi, yi, lambda_i, rho):
         # primal psuedo gradient of constraints
         m = Ai.shape[0]
-        s1 = self.N * (np.dot(Ai, agent_proposed_input) - bi)
+        s1 = self.N * (np.dot(Ai, agent_proposed_input) - bi) + yi
         s2 = lambda_i
 
         res = 0
         for i in range(m):
-            res += np.maximum(np.dot(rho * s1[i] + s2[i], Ai.T[i]), 0)
+            res += np.dot(np.maximum(rho * s1[i] + s2[i], 0), Ai.T[i])
         
         return res
 
-    def trades_G_i_dual(self, agent_proposed_input, Ai, bi, lambda_i, rho):
+    def trades_G_i_dual(self, agent_proposed_input, Ai, bi, yi, lambda_i, rho):
         # dual psuedo gradient of constraints
-        e = Ai.T
         m = Ai.shape[0]
+        # e = np.eye(m)
+        e = Ai.T
 
-        s1 = self.N * (np.dot(Ai, agent_proposed_input) - bi)
+        s1 = self.N * (np.dot(Ai, agent_proposed_input) - bi) + yi
         s2 = lambda_i
 
         res = 0
         for i in range(m):
-            res += np.maximum(np.dot(rho * s1[i] + s2[i], e[i]) - s2[i], - s2[i])
-        return res
+            res += np.dot(np.maximum(rho * s1[i] + s2[i], 0) - s2[i], e[i])
+        return (1./rho) * res
 
     def projection(self, v, last_delta):
         # Project v into Ubox AND delta_prev constraint

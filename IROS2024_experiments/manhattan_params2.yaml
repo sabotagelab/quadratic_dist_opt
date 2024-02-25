@@ -98,11 +98,11 @@
       h_gamma: 325
       V_alpha: 1
     distributed:
-      hi: .8
-      ho: 1
+      hi: 0.01
+      ho: 0.1
       hv: 1
-      step_size: 0.00003
-      trade_param: 0.35
+      step_size: 0.01
+      trade_param: 0.15
   obstacles:
     obs1:
       center: [2.75, 4, 0.0]  #empire state area
@@ -137,14 +137,14 @@
       iter: 1000
   safe_planner:
     central:
-      h_gamma: 1000
-      V_alpha: 0.08
+      h_gamma: 400 #1000
+      V_alpha: 1 #0.08
     distributed:
-      hi: .8
-      ho: 1
+      hi: 0.01
+      ho: 0.1
       hv: 1
-      step_size: 0.000025 #0.00003
-      trade_param: .15 #0.19
+      step_size: 0.005
+      trade_param: 0.15
   obstacles:
     obs1:
       center: [2.75, 4, 0.0]  #empire state area
@@ -170,23 +170,23 @@
   Tf: 1
   H: 25
   sd: 0.0001
-  Ubox: 500
+  Ubox: 100
   fair_planner:
     alpha: 0.0001
     distributed:
-      kappa: 100
+      kappa: 500
       eps_bounds: 25
       iter: 1000
   safe_planner:
     central:
-      h_gamma: 1000
-      V_alpha: 0.08
+      h_gamma: 800
+      V_alpha: 0.09
     distributed:
-      hi: .8
-      ho: 1
+      hi: 0.01
+      ho: 0.1
       hv: 1
-      step_size: 0.00002
-      trade_param: 0.12
+      step_size: 0.002
+      trade_param: 0.15
   obstacles:
     obs1:
       center: [2.75, 4, 0.0]  #empire state area
@@ -216,7 +216,7 @@
   fair_planner:
     alpha: 0.0001 # 0.001 # 0.000000001 #
     distributed:
-      kappa: 100
+      kappa: 500
       eps_bounds: 25
       iter: 1000
   safe_planner:
@@ -224,11 +224,11 @@
       h_gamma: 1200
       V_alpha: 1
     distributed:
-      hi: 0.8
-      ho: 1
+      hi: 0.01
+      ho: 0.1
       hv: 1
-      step_size: 0.000012
-      trade_param: 0.12
+      step_size: 0.002
+      trade_param: 0.1
   obstacles:
     obs1:
       center: [2.75, 4, 0.0]  #empire state area
