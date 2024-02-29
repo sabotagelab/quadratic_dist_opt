@@ -88,50 +88,57 @@ class Objective():
         control_input_size = self.control_input_size
         
         init_eps = []
-        local_sols = {}
+        # local_sols = {}
         for i in range(self.N):
             init_eps.append(np.zeros(self.H * control_input_size))
-            local_sols[i] = []
+            # local_sols[i] = []
         prev_eps = init_eps
-        prev_sols = list(local_sols.values())
+        # prev_sols = list(local_sols.values())
 
         u = init_u
         fairness = []
-        running_avgs = {i: [] for i in range(self.N)}
-        stop_count = 0
+        gamma = np.linspace(1, 0.1, steps)
+        # running_avgs = {i: [] for i in range(self.N)}
+        # stop_count = 0
         for s in range(steps):
             # print('Iter {}'.format(s))
             try:
                 new_eps, new_sols = self.solve_local(u.flatten(), prev_eps, dyn=dyn)
                 if len(new_eps) == 0:
                     new_eps = prev_eps
-                    new_sols = prev_sols
+                    # new_sols = prev_sols
             except Exception as e:
                 # print('Distributed Method Error at Iteration {}'.format(s))
                 # print(e)
                 # print(prev_eps)
                 new_eps = prev_eps
-                new_sols = prev_sols
+                # new_sols = prev_sols
 
+            prev_u = u
             for i in range(self.N):
-                u[i] += new_eps[i].reshape((self.H, control_input_size))
-                local_sols[i].append(new_sols[i])
+                # u[i] += new_eps[i].reshape((self.H, control_input_size))
+                # local_sols[i].append(new_sols[i])
+                u[i] += gamma[s] * new_eps[i].reshape((self.H, control_input_size))
 
             fairness.append(self._fairness_central(u))
             prev_eps = new_eps
-            prev_sols = new_sols
+            # prev_sols = new_sols
 
-            for i in range(self.N):
-                curr_avg = np.mean(local_sols[i])
-                running_avgs[i].append(curr_avg)
-                if s > 1:
-                    last_avg = running_avgs[i][s-2]
-                    if np.abs((curr_avg - last_avg)/last_avg) < self.stop_diff:
-                        self.stop[i] = 1
-            if np.sum(self.stop) > (0.75 * self.N):
+            # for i in range(self.N):
+            #     curr_avg = np.mean(local_sols[i])
+            #     running_avgs[i].append(curr_avg)
+            #     if s > 1:
+            #         last_avg = running_avgs[i][s-2]
+            #         if np.abs((curr_avg - last_avg)/last_avg) < self.stop_diff:
+            #             self.stop[i] = 1
+            # if np.sum(self.stop) > (0.75 * self.N):
+            #     break
+
+            # Check if inputs converged
+            if np.linalg.norm(u - prev_u) < 0.1:
                 break
 
-        return u, local_sols, fairness, s
+        return u
 
 
     def solve_local(self, u, prev_eps, dyn='simple'):
@@ -164,7 +171,7 @@ class Objective():
 
             grad = fairness_value
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
-            prev_eps_param = cp.Parameter(self.H * control_input_size, value=prev_eps[i])
+            # prev_eps_param = cp.Parameter(self.H * control_input_size, value=prev_eps[i])
 
             # create decision variable
             eps = cp.Variable(self.H * control_input_size)
@@ -210,8 +217,10 @@ class Objective():
                 final_pos = prev_state
 
             # define local objective
+            # objective = cp.Minimize(-1 * (eps.T @ grad_param) + \
+            #     self.kappa * cp.norm(eps - prev_eps_param)**2 )
             objective = cp.Minimize(-1 * (eps.T @ grad_param) + \
-                self.kappa * cp.norm(eps - prev_eps_param)**2 )
+                self.kappa * cp.norm(eps)**2 )
 
             # define local constraints
             constraints = [
@@ -712,6 +721,13 @@ class Objective():
             ui = seed_input[i]
             ui_full = np.hstack([ui, g])
             uis.append(ui_full)
+
+        self.init_uis_dist_nbf = uis
+
+        # check that it is full row rank
+        # full_ai = np.hstack(agent_Ais)
+        # Asquare = np.dot(full_ai, full_ai.T)
+        # Asquare_invert = np.linalg.inv(Asquare)
         
         m = Ai.shape[0]
         lambdas = [np.ones(m) for i in range(self.N)]
@@ -720,10 +736,13 @@ class Objective():
 
         # Repeat below until convergence, auxiliary variables in ui will converge to match the neighbors control inputs in all ujs
         last_deltas = [9999 for i in range(self.N)]
-        agent_alg1_running = [True for i in range(self.N)]
+        # agent_alg1_running = [True for i in range(self.N)]
+        is_converged = False
         all_Js = []
         for p in range(100):
-            if not all(agent_alg1_running):
+            # if not all(agent_alg1_running):
+            #     break
+            if is_converged:
                 break
             # use to get all current phi_i for this iteration
             _, agent_phi_i = self.trades_sigma(uis, seed_input, grad=False, return_all=True)  
@@ -732,27 +751,38 @@ class Objective():
             new_zis = []
             new_yis = []
             for i in range(self.N):
-                if agent_alg1_running[i]:
-                # Compute lines 3-6 of Alg 1
-                    ui_p, lambda_p, zi_p, yi_p = self.trades(i, uis, seed_input, last_deltas[i], agent_Ais, agent_bis, agent_phi_i, 
-                                                            lambdas, zis, yis, step_size=step_size, trade_param=trade_param)
-                    # Check convergence criteria
-                    cur_delta = np.maximum(np.linalg.norm(ui_p - uis[i]),
-                                            np.linalg.norm(lambda_p - lambdas[i]))
-                    last_deltas[i] = cur_delta
-                    if cur_delta < 0.1:
-                        agent_alg1_running[i] = False
-                else:
-                    ui_p = uis[i]
-                    lambda_p = lambdas[i]
-                    zi_p = zis[i]
-                    yi_p = yis[i]
+                # # if i == 0:
+                # #     print(uis[i][4:])
+                # if agent_alg1_running[i]:
+                # # Compute lines 3-6 of Alg 1
+                #     ui_p, lambda_p, zi_p, yi_p = self.trades(i, uis, seed_input, last_deltas[i], agent_Ais, agent_bis, agent_phi_i, 
+                #                                             lambdas, zis, yis, step_size=step_size, trade_param=trade_param)
+                #     # Check convergence criteria
+                #     cur_delta = np.maximum(np.linalg.norm(ui_p - uis[i]),
+                #                             np.linalg.norm(lambda_p - lambdas[i]))
+                #     last_deltas[i] = cur_delta
+                #     if cur_delta < 0.1:
+                #         agent_alg1_running[i] = False
+                # else:
+                #     ui_p = uis[i]
+                #     lambda_p = lambdas[i]
+                #     zi_p = zis[i]
+                #     yi_p = yis[i]
                 # update uis, lambdas, zis, yis
+                # Compute lines 3-6 of Alg 1
+                ui_p, lambda_p, zi_p, yi_p = self.trades(i, uis, seed_input, last_deltas[i], agent_Ais, agent_bis, agent_phi_i, 
+                                                         lambdas, zis, yis, step_size=step_size, trade_param=trade_param)
                 new_uis.append(ui_p)
                 new_lambdas.append(lambda_p)
                 new_zis.append(zi_p)
                 new_yis.append(yi_p)
             
+            # Check Convergence Criteria
+            cur_delta = np.maximum(np.linalg.norm(np.array(new_uis) - np.array(uis)),
+                                   np.linalg.norm(np.array(new_lambdas) - np.array(lambdas)))
+            if cur_delta < 0.1:
+                is_converged = True
+    
             uis = new_uis
             lambdas = new_lambdas
             zis = new_zis
@@ -799,7 +829,7 @@ class Objective():
             
             # Compute tij 
             ## ABS BARRIER FUNC
-            hij = np.sum(np.abs(agent_error_dyn - neighbor_error_dyn + delta_p) / self.safe_dist - 1)
+            hij = np.sum(np.abs(agent_error_dyn - neighbor_error_dyn + delta_p) / self.safe_dist) - 1
             tij = 2/(self.dt**2) * h_i * hij + \
                 2/self.dt*(1/self.safe_dist*np.sum(np.sign(actual_dist) * delta_v))
             ## NORM BARRIER FUNC
@@ -815,7 +845,7 @@ class Objective():
             obj_actual_dist = self.init_pos[agent_id] - obs['center']
             delta_obj_p = agent_target_pos - obs['center']
             ## ABS BARRIER FUNC
-            hi_obj = np.sum(np.abs(agent_error_dyn + delta_obj_p) / obs['radius'] - 1)
+            hi_obj = np.sum(np.abs(agent_error_dyn + delta_obj_p) / obs['radius']) - 1
             ti_obj = 2/(self.dt**2) * h_o * hi_obj + \
                 2/self.dt*(1/obs['radius']*np.sum(np.sign(obj_actual_dist) * agent_actual_vel))
             ## NORM BARRIER FUNC
@@ -830,7 +860,7 @@ class Objective():
         target_actual_dist = self.init_pos[agent_id] - self.targets[agent_id]['center']
         delta_target_p = agent_target_pos - self.targets[agent_id]['center']
         ## ABS BARRIER FUNC
-        vi_target = np.sum((np.abs(agent_error_dyn + delta_target_p) / self.targets[agent_id]['radius'] - 1))
+        vi_target = np.sum((np.abs(agent_error_dyn + delta_target_p) / self.targets[agent_id]['radius'])) - 1
         ti_target = 2/(self.dt**2) * h_v * vi_target + \
             2/self.dt*(1/self.targets[agent_id]['radius']*np.sum(np.sign(target_actual_dist) * agent_actual_vel))
         ## NORM BARRIER FUNC
@@ -910,7 +940,9 @@ class Objective():
         G_lambi = self.trades_G_i_dual(ui_full, Ais[agent_id], bis[agent_id], yis[agent_id], lambdas[agent_id], rho)
         
         # compute ui_p (line 3)
-        ui_p = ui_full + trade_param * (self.projection(ui_full - step_size * F_i - step_size * G_ui, last_delta) - ui_full)
+        ui_p = ui_full + trade_param * (self.projection(ui_full - step_size * F_i - step_size * G_ui, 
+                                                        last_delta, 
+                                                        self.init_uis_dist_nbf[agent_id]) - ui_full)
         
         # compute lambda, zi, yi (line 4-6)
         lambda_p = 0
@@ -973,7 +1005,7 @@ class Objective():
             res += np.dot(np.maximum(rho * s1[i] + s2[i], 0) - s2[i], e[i])
         return (1./rho) * res
 
-    def projection(self, v, last_delta):
+    def projection(self, v, last_delta, init_uis):
         # Project v into Ubox AND delta_prev constraint
         for i in [0, 1, 2]:
             if v[i] < -1 * self.Ubox:
@@ -987,4 +1019,8 @@ class Objective():
             v[3] = last_delta
         if v[3] < 0:
             v[3] = 0
+        
+        # keep the static obstacle cbf and clf values constant
+        num_coupling_constraints = int(self.N * (self.N - 1) / 2)
+        v[4:4+num_coupling_constraints] = init_uis[4:4+num_coupling_constraints]
         return v

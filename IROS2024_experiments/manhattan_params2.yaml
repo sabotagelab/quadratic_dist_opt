@@ -98,10 +98,10 @@
       h_gamma: 325
       V_alpha: 1
     distributed:
-      hi: 0.01
-      ho: 0.1
+      hi: .01 # 0.002
+      ho: 0.1 
       hv: 1
-      step_size: 0.01
+      step_size: 0.01 # 0.00005
       trade_param: 0.15
   obstacles:
     obs1:
@@ -143,7 +143,7 @@
       hi: 0.01
       ho: 0.1
       hv: 1
-      step_size: 0.005
+      step_size: 0.002
       trade_param: 0.15
   obstacles:
     obs1:

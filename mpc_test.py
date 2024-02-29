@@ -199,7 +199,8 @@ for t in range(trials):
             obj.solo_energies = solo_energies
             # print('Running Fair Planner at time {}'.format(H-Hbar))
             try:
-                seed_u, local_sols, fairness, converge_iter = obj.solve_distributed(init_u, steps=fair_dist_iter, dyn='quad')
+                # seed_u, local_sols, fairness, converge_iter = obj.solve_distributed(init_u, steps=fair_dist_iter, dyn='quad')
+                seed_u = obj.solve_distributed(init_u, steps=fair_dist_iter, dyn='quad')
                 # seed_obj, seed_u = obj.solve_central(init_u, steps=fair_dist_iter)
                 seed_u = np.array(seed_u).reshape((N, Hbar, control_input_size))
 
@@ -379,15 +380,15 @@ for t in range(trials):
         #         goal_sphere.plot_3d(ax, alpha=0.2, color='green')
         #     plt.show()
 
-    # if dist_nbf:
-    #     # print('plot J values of first iteration')
-    #     plt.plot(list(range(len(all_J_sequences[0]))), all_J_sequences[0])
-    #     plt.savefig('{}/dist_cost_init.png'.format(trial_dir))
-    #     plt.clf()
+    if dist_nbf:
+        # print('plot J values of first iteration')
+        plt.plot(list(range(len(all_J_sequences[0]))), all_J_sequences[0])
+        plt.savefig('{}/dist_cost_init.png'.format(trial_dir))
+        plt.clf()
 
-    #     plt.plot(list(range(len(all_J_sequences[-1]))), all_J_sequences[-1])
-    #     plt.savefig('{}/dist_cost.png'.format(trial_dir))
-    #     plt.clf()
+        plt.plot(list(range(len(all_J_sequences[-1]))), all_J_sequences[-1])
+        plt.savefig('{}/dist_cost.png'.format(trial_dir))
+        plt.clf()
 
     n = N*H*control_input_size
     Q = np.random.randn(n, n)   # variable for quadratic objective
@@ -472,14 +473,14 @@ for t in range(trials):
     # plt.show()
 
     # print("Figure CLF and CBF Values")
-    # fig, axs = plt.subplots(2)
-    # axs[0].plot(list(range(len(cbf_values))), cbf_values)
-    # axs[0].set_title('h_min')
-    # axs[1].plot(list(range(len(clf_values))), clf_values)
-    # axs[1].set_title('V_max')
-    # plt.savefig('{}/final_cbf_clf.png'.format(trial_dir))
-    # plt.clf()
-    # plt.close()
+    fig, axs = plt.subplots(2)
+    axs[0].plot(list(range(len(cbf_values))), cbf_values)
+    axs[0].set_title('h_min')
+    axs[1].plot(list(range(len(clf_values))), clf_values)
+    axs[1].set_title('V_max')
+    plt.savefig('{}/final_cbf_clf.png'.format(trial_dir))
+    plt.clf()
+    plt.close()
 
     # Also plot delta values 
     # plt.plot(list(range(len(all_deltas))), all_deltas)
@@ -519,6 +520,9 @@ for t in range(trials):
             # plt.plot(list(range(len(clf_reach))), clf_reach)
             # plt.savefig('{}/ind_cld_reach.png'.format(trial_dir))
             # plt.clf()
+    else:
+        save_cbf_clf_vals = np.round(np.array([np.min(cbf_values, axis=1), np.max(clf_values, axis=1)]), 3)
+        np.savetxt('{}/cbf_clf_values.csv'.format(trial_dir), save_cbf_clf_vals.T, fmt='%f')
 
 print('Successful Trials {}'.format(successful_trials))
 print('Hit Obstacle {}'.format(collide_with_obstacle))
