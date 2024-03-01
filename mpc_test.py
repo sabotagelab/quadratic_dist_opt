@@ -195,14 +195,15 @@ for t in range(trials):
         seed_u = init_u      
         fair_planner_time_start = time.time()
         if notion != 2:
-            obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, drone_goals, drone_starts,  Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
+            obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, drone_goals, drone_starts, Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
             obj.solo_energies = solo_energies
             # print('Running Fair Planner at time {}'.format(H-Hbar))
             try:
                 # seed_u, local_sols, fairness, converge_iter = obj.solve_distributed(init_u, steps=fair_dist_iter, dyn='quad')
-                seed_u = obj.solve_distributed(init_u, steps=fair_dist_iter, dyn='quad')
-                # seed_obj, seed_u = obj.solve_central(init_u, steps=fair_dist_iter)
-                seed_u = np.array(seed_u).reshape((N, Hbar, control_input_size))
+                curr_t = H - Hbar
+                seed_u = obj.solve_distributed(init_u, final_us, curr_t, steps=fair_dist_iter, dyn='quad')
+                seed_u = np.array(seed_u).reshape((N, H, control_input_size))
+                seed_u = seed_u[:, curr_t:, :]
 
                 # if dist_nbf:
                 if Hbar == H:
@@ -401,7 +402,7 @@ for t in range(trials):
     drone_results = obj.check_avoid_constraints(final_us)
     trial_result = max(drone_results)
 
-    sol_energy = np.round(obj.quad(final_us.flatten()), 3)
+    sol_energy = alpha * np.round(obj.quad(final_us.flatten()), 3)
     sol_fairness1 = np.round(obj.fairness(final_us.flatten()), 3)
     sol_fairness4 = np.round(obj.surge_fairness(final_us.flatten()), 3)
 

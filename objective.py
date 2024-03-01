@@ -84,70 +84,53 @@ class Objective():
     # Distributed Formulation
     ###########################################################
 
-    def solve_distributed(self, init_u, steps=10, dyn='simple'):
+    def solve_distributed(self, init_u, prefix_u, curr_t, steps=10, dyn='simple'):
+        if curr_t > 0:
+            prefix_u = np.array(prefix_u).transpose(1, 0, 2)
+            u = np.hstack((prefix_u, init_u))
+        else:
+            u = init_u
         control_input_size = self.control_input_size
         
         init_eps = []
-        # local_sols = {}
         for i in range(self.N):
             init_eps.append(np.zeros(self.H * control_input_size))
-            # local_sols[i] = []
         prev_eps = init_eps
-        # prev_sols = list(local_sols.values())
 
-        u = init_u
         fairness = []
         gamma = np.linspace(1, 0.1, steps)
-        # running_avgs = {i: [] for i in range(self.N)}
-        # stop_count = 0
         for s in range(steps):
-            # print('Iter {}'.format(s))
             try:
-                new_eps, new_sols = self.solve_local(u.flatten(), prev_eps, dyn=dyn)
+                new_eps, new_sols = self.solve_local(u.flatten(), curr_t, prev_eps, dyn=dyn)
                 if len(new_eps) == 0:
                     new_eps = prev_eps
-                    # new_sols = prev_sols
             except Exception as e:
                 # print('Distributed Method Error at Iteration {}'.format(s))
-                # print(e)
-                # print(prev_eps)
                 new_eps = prev_eps
-                # new_sols = prev_sols
-
-            prev_u = u
+            prev_u = np.copy(u)
             for i in range(self.N):
-                # u[i] += new_eps[i].reshape((self.H, control_input_size))
-                # local_sols[i].append(new_sols[i])
                 u[i] += gamma[s] * new_eps[i].reshape((self.H, control_input_size))
-
+                
             fairness.append(self._fairness_central(u))
             prev_eps = new_eps
-            # prev_sols = new_sols
-
-            # for i in range(self.N):
-            #     curr_avg = np.mean(local_sols[i])
-            #     running_avgs[i].append(curr_avg)
-            #     if s > 1:
-            #         last_avg = running_avgs[i][s-2]
-            #         if np.abs((curr_avg - last_avg)/last_avg) < self.stop_diff:
-            #             self.stop[i] = 1
-            # if np.sum(self.stop) > (0.75 * self.N):
-            #     break
 
             # Check if inputs converged
+            diff = np.linalg.norm(u - prev_u)
+            # print(curr_t, s, diff)
             if np.linalg.norm(u - prev_u) < 0.1:
                 break
 
         return u
 
 
-    def solve_local(self, u, prev_eps, dyn='simple'):
+    def solve_local(self, u, curr_t, prev_eps, dyn='simple'):
         control_input_size = self.control_input_size
         F = self.N * self.H * control_input_size
         
         u_param = cp.Parameter(F, value=u)
 
         # Get the partial derivatives
+        # grad_quad = self.quad(u, grad=True).reshape(self.N, control_input_size * self.H)
         grad_quad = self.quad(u, grad=True).reshape(self.N, control_input_size * self.H)
         if self.notion in [3, 5]:
             grad_fairness = self.surge_fairness(u, grad=True)
@@ -157,21 +140,19 @@ class Objective():
         solved_values = []
         local_sols = []
         for i in range(self.N):
-            curr_agent_u = u.reshape((self.N, self.H, control_input_size))[i].flatten()
             if self.notion in [0, 3]:  ## the basic fairness notion, uTQu + f1 (or uTQu + surge fairness)
-                # fairness_value = self.alpha * grad_quad[i] + self.alpha * grad_fairness[i]
                 fairness_value = self.alpha * grad_quad[i] + grad_fairness[i]
             elif self.notion == 1:  # no fairness, uTQu only
                 fairness_value = self.alpha * grad_quad[i]
             elif self.notion == 2:  # no fairness, no uTQu term
                 fairness_value = np.zeros(self.H*control_input_size)
             else:  # f1 or f2 only  (ie self.notion in [4, 5])
-                # fairness_value = np.ones(self.H*control_input_size) * self.alpha * grad_fairness[i]
                 fairness_value = np.ones(self.H*control_input_size) * grad_fairness[i]
 
             grad = fairness_value
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
-            # prev_eps_param = cp.Parameter(self.H * control_input_size, value=prev_eps[i])
+
+            curr_agent_u = u.reshape((self.N, self.H, control_input_size))[i].flatten()
 
             # create decision variable
             eps = cp.Variable(self.H * control_input_size)
@@ -190,46 +171,38 @@ class Objective():
                     value=np.zeros(F - (self.H * control_input_size)))
                 stack = cp.hstack([eps_zeros_before, eps])
 
-            # define constraint on final position based on eps and init state param
-            target_center = self.targets[i]['center']
-            target_radius = self.targets[i]['radius']
-            prev_state = self.init_states[i]
-            if dyn =='quad':
-                pos = prev_state[0:3]
-                velo = prev_state[3:6]
-                t = self.dt
-                for j in range(self.H):
-                    idx = j*control_input_size
-                
-                    accel = curr_agent_u[idx:idx+control_input_size] + eps[idx:idx+control_input_size]
-
-                    pos = pos + velo*t + (1.0/2.0)*accel*(t**2)
-                    velo = velo + accel*t
-                final_pos = pos
-            else:
-                # assuming simple dynamics
-                for j in range(self.H):
-                    idx = j*control_input_size
-                    new_state = prev_state.flatten() + \
-                        2*(curr_agent_u[idx:idx+control_input_size] + \
-                            eps[idx:idx+control_input_size])
-                    prev_state = new_state
-                final_pos = prev_state
-
-            # define local objective
-            # objective = cp.Minimize(-1 * (eps.T @ grad_param) + \
-            #     self.kappa * cp.norm(eps - prev_eps_param)**2 )
-            objective = cp.Minimize(-1 * (eps.T @ grad_param) + \
-                self.kappa * cp.norm(eps)**2 )
-
             # define local constraints
             constraints = [
                 u_param + stack <= self.Ubox, \
                 -self.Ubox <= u_param + stack,
                 eps <= self.eps_bounds,
-                -1 * self.eps_bounds <= eps,
-                cp.norm(final_pos - target_center) <= target_radius  # TODO: change this to include target velocities 0?
-                ]
+                -1 * self.eps_bounds <= eps]
+
+            # define constraint on final position based on eps and init state param
+            target_center = self.targets[i]['center']
+            target_radius = self.targets[i]['radius']
+            prev_state = self.init_states[i]
+            pos = prev_state[0:3]
+            velo = prev_state[3:6]
+            t = self.dt
+            for j in range(self.H):
+                idx = j*control_input_size
+            
+                if j < curr_t:
+                    accel = curr_agent_u[idx:idx+control_input_size]
+                    constraints.append(eps[idx:idx+control_input_size] == 0)
+                else:
+                    accel = curr_agent_u[idx:idx+control_input_size] + eps[idx:idx+control_input_size]
+
+                pos = pos + velo*t + (1.0/2.0)*accel*(t**2)
+                velo = velo + accel*t
+            final_pos = pos
+
+            constraints.append(cp.norm(final_pos - target_center) <= target_radius)
+
+            # define local objective
+            objective = cp.Minimize(-1 * (eps.T @ grad_param) + \
+                self.kappa * cp.norm(eps)**2 )
 
             prob = cp.Problem(objective, constraints)
             prob.solve(verbose=False, solver=CP_SOLVER)
@@ -250,50 +223,6 @@ class Objective():
                 local_sols.append(0)  # TODO: get solution from previous iteration
 
         return solved_values, local_sols
-    
-    ##########################################################
-    # Central Formulation
-    ###########################################################
-
-    def solve_central(self, init_u, steps=200):
-        func = self.central_obj
-        x0 = init_u.flatten()
-
-        constraints=[NonlinearConstraint(self.reach_constraint, -np.inf, 0)]
-
-        if self.notion == 20:
-            constraints.append(NonlinearConstraint(self.full_avoid_constraint, 0, np.inf))
-        
-        res = minimize(func, x0, bounds=Bounds(lb=-self.Ubox, ub=self.Ubox), 
-                       constraints=constraints,
-                       options={'maxiter':steps}, method=SCIPY_SOLVER)
-        if not res.success:
-            print(res.message)
-            return np.inf, []
-        final_u = res.x
-        final_obj = res.fun
-
-        return final_obj, final_u
-    
-    def central_obj(self, u):
-        if self.notion == 0:  ## the basic fairness notion, uTQu + f1
-            # fairness_value = self.alpha * self.quad(u) + self.alpha * self.fairness(u)
-            fairness_value = self.alpha * self.quad(u) + self.fairness(u)
-        elif self.notion == 1:  ## no fairness, uTQu only
-            fairness_value = self.alpha * self.quad(u)
-        elif self.notion in [2, 20]:  # no fairness, no uTQu term
-            fairness_value = 0
-        elif self.notion == 3:  # use surge fairness 
-            # fairness_value = self.alpha * self.quad(u) + self.alpha * self.surge_fairness(u)
-            fairness_value =  self.alpha * self.quad(u) + self.surge_fairness(u)
-        elif self.notion == 4:  #f1 only
-            # fairness_value = self.alpha * self.fairness(u)
-            fairness_value = self.fairness(u)
-        else:  # f2 only)
-            # fairness_value = self.alpha * self.surge_fairness(u)
-            fairness_value = self.surge_fairness(u)
-
-        return fairness_value
 
             
     ##########################################################
@@ -310,7 +239,6 @@ class Objective():
             final_pos = pos_i[len(pos_i)-1]
             target_center = self.targets[i]['center']
             target_radius = self.targets[i]['radius']
-            # TODO: change this to include target velocities 0?
             reach = np.maximum(reach, np.linalg.norm(final_pos - target_center) - target_radius)
             
         return reach
@@ -337,7 +265,6 @@ class Objective():
         control_input_size = self.control_input_size
 
         u_reshape = u.reshape((self.N, self.H, control_input_size))
-        # agent_norm_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1) / (np.array(self.solo_energies) + EPS)
         agent_norm_energies = (np.linalg.norm(u_reshape, axis=(1,2))**2) / (np.array(self.solo_energies) + EPS)
         mean_energy = np.mean(agent_norm_energies)
         if mean_energy == 0:
@@ -358,7 +285,6 @@ class Objective():
         control_input_size = self.control_input_size
 
         u_reshape = u.reshape((self.N, self.H, control_input_size))
-        # agent_norm_energies = np.sum(np.linalg.norm(u_reshape, axis=2)**2, axis=1) / (np.array(self.solo_energies) + EPS)
         agent_norm_energies = (np.linalg.norm(u_reshape, axis=(1,2))**2) / (np.array(self.solo_energies) + EPS)
         mean_energy = np.mean(agent_norm_energies)
         if mean_energy == 0:
