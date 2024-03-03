@@ -1,6 +1,7 @@
 import cvxpy as cp
 import numpy as np
 from scipy.optimize import Bounds, basinhopping, minimize, NonlinearConstraint
+import time
 from generate_trajectories import generate_agent_states, generate_init_traj_quad
 
 import warnings
@@ -99,13 +100,16 @@ class Objective():
 
         fairness = []
         gamma = np.linspace(1, 0.1, steps)
+        timeout = 30
+        start_time = time.time()
         for s in range(steps):
             try:
-                new_eps, new_sols = self.solve_local(u.flatten(), curr_t, prev_eps, dyn=dyn)
+                new_eps = self.solve_local(u.flatten(), curr_t, prev_eps, dyn=dyn)
                 if len(new_eps) == 0:
                     new_eps = prev_eps
             except Exception as e:
-                # print('Distributed Method Error at Iteration {}'.format(s))
+                print(e)
+                print('Distributed Method Error at Iteration {}'.format(s))
                 new_eps = prev_eps
             prev_u = np.copy(u)
             for i in range(self.N):
@@ -116,11 +120,16 @@ class Objective():
 
             # Check if inputs converged
             diff = np.linalg.norm(u - prev_u)
-            # print(curr_t, s, diff)
-            if np.linalg.norm(u - prev_u) < 0.1:
+            print(curr_t, s, diff)
+            thresh = 0.1 if curr_t > 0 else 0.01
+            if diff < thresh:
                 break
-
-        return u
+            
+            if curr_t > 0:
+                if (time.time() - start_time) >= timeout:
+                    break
+        
+        return u, s
 
 
     def solve_local(self, u, curr_t, prev_eps, dyn='simple'):
@@ -138,7 +147,6 @@ class Objective():
             grad_fairness = self.fairness(u, grad=True)
 
         solved_values = []
-        local_sols = []
         for i in range(self.N):
             if self.notion in [0, 3]:  ## the basic fairness notion, uTQu + f1 (or uTQu + surge fairness)
                 fairness_value = self.alpha * grad_quad[i] + grad_fairness[i]
@@ -188,11 +196,9 @@ class Objective():
             for j in range(self.H):
                 idx = j*control_input_size
             
+                accel = curr_agent_u[idx:idx+control_input_size] + eps[idx:idx+control_input_size]
                 if j < curr_t:
-                    accel = curr_agent_u[idx:idx+control_input_size]
-                    constraints.append(eps[idx:idx+control_input_size] == 0)
-                else:
-                    accel = curr_agent_u[idx:idx+control_input_size] + eps[idx:idx+control_input_size]
+                    constraints.append(eps[idx:idx+control_input_size] == np.zeros(control_input_size))
 
                 pos = pos + velo*t + (1.0/2.0)*accel*(t**2)
                 velo = velo + accel*t
@@ -212,17 +218,18 @@ class Objective():
                     # prob.solve(verbose=True, solver=CP_SOLVER)
                     print('Agent {} Local Solution Infeasible'.format(i))
                     # If a single agent's local solution is infeasible don't use any solution from this iteration, return empty team solution
-                    return [], []
-                solved_values.append(eps.value)
-                local_sols.append(prob.value)
+                    # return [], []
+                    solved_values.append(prev_eps[i])
+                else:
+                    solved_values.append(eps.value)
             except Exception as e:
                 # Try to catch solver error. If an agent runs into solver error, catch and use previous agent's solution
                 print(e)
                 print('Agent {} Solver Error'.format(i))
                 solved_values.append(prev_eps[i])
-                local_sols.append(0)  # TODO: get solution from previous iteration
 
-        return solved_values, local_sols
+
+        return solved_values
 
             
     ##########################################################
@@ -582,8 +589,8 @@ class Objective():
                 if last_delta is not None:
                     print(f"attempting relaxation")
                     constraints.pop() #delta constraint
-                    constraints.pop() #ubox constraint
-                    constraints.pop() #ubox constraint
+                    # constraints.pop() #ubox constraint
+                    # constraints.pop() #ubox constraint
                     cbf_controller = cp.Problem(objective, constraints)
                     cbf_controller.solve(solver=CP_SOLVER)
                     relaxed = True
@@ -591,16 +598,7 @@ class Objective():
                         print(f"Relaxed problem also infeasible")
                         raise Exception('Central Safe Problem Infeasible after relaxation')
                 else:
-                    print(f"attempting relaxation")
-                    constraints.pop() #ubox constraint
-                    constraints.pop() #ubox constraint
-                    cbf_controller = cp.Problem(objective, constraints)
-                    cbf_controller.solve(solver=CP_SOLVER)
-                    relaxed = True
-                    if cbf_controller.status in ['infeasible', 'infeasible_inaccurate']:
-                        print(f"Relaxed problem also infeasible")
-                        raise Exception('Central Safe Problem Infeasible after relaxation')
-                    # raise Exception('Central Safe Problem Infeasible')
+                    raise Exception('Central Safe Problem Infeasible')
             
             for r in range(self.N):
                 idx_start = r*self.control_input_size
@@ -677,24 +675,6 @@ class Objective():
             new_zis = []
             new_yis = []
             for i in range(self.N):
-                # # if i == 0:
-                # #     print(uis[i][4:])
-                # if agent_alg1_running[i]:
-                # # Compute lines 3-6 of Alg 1
-                #     ui_p, lambda_p, zi_p, yi_p = self.trades(i, uis, seed_input, last_deltas[i], agent_Ais, agent_bis, agent_phi_i, 
-                #                                             lambdas, zis, yis, step_size=step_size, trade_param=trade_param)
-                #     # Check convergence criteria
-                #     cur_delta = np.maximum(np.linalg.norm(ui_p - uis[i]),
-                #                             np.linalg.norm(lambda_p - lambdas[i]))
-                #     last_deltas[i] = cur_delta
-                #     if cur_delta < 0.1:
-                #         agent_alg1_running[i] = False
-                # else:
-                #     ui_p = uis[i]
-                #     lambda_p = lambdas[i]
-                #     zi_p = zis[i]
-                #     yi_p = yis[i]
-                # update uis, lambdas, zis, yis
                 # Compute lines 3-6 of Alg 1
                 ui_p, lambda_p, zi_p, yi_p = self.trades(i, uis, seed_input, last_deltas[i], agent_Ais, agent_bis, agent_phi_i, 
                                                          lambdas, zis, yis, step_size=step_size, trade_param=trade_param)

@@ -136,6 +136,7 @@ for t in range(trials):
 
     # DO RECEDING HORIZON CONTROL
     Tbar = Tf
+    fair_planner_iter = []
     final_us = []
     final_trajectories = [init_pos]
     final_vels = [[s[3:6] for s in init_states]]
@@ -157,7 +158,6 @@ for t in range(trials):
                 traj_pos, traj_accel = generate_init_traj_quad(robots[i].state, goal['center'], Hbar+1, Tf=Tbar)
             init_u.append(traj_accel)
             init_traj.append(traj_pos)
-
         init_u = np.array(init_u)
 
         # if t == 0 and Hbar == H:
@@ -189,33 +189,34 @@ for t in range(trials):
             solo_energies.append(np.linalg.norm(init_u[i])**2)
         
         # INIT SOLVER
-        n = N*Hbar*control_input_size
+        # n = N*Hbar*control_input_size
+        n = N*H*control_input_size
         Q = np.random.randn(n, n)   # variable for quadratic objective
         Q = Q.T @ Q  
         seed_u = init_u      
         fair_planner_time_start = time.time()
+        converge_iter = 0
         if notion != 2:
             obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, drone_goals, drone_starts, Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
             obj.solo_energies = solo_energies
             # print('Running Fair Planner at time {}'.format(H-Hbar))
             try:
-                # seed_u, local_sols, fairness, converge_iter = obj.solve_distributed(init_u, steps=fair_dist_iter, dyn='quad')
                 curr_t = H - Hbar
-                seed_u = obj.solve_distributed(init_u, final_us, curr_t, steps=fair_dist_iter, dyn='quad')
+                seed_u, converge_iter = obj.solve_distributed(init_u, final_us, curr_t, steps=fair_dist_iter, dyn='quad')
                 seed_u = np.array(seed_u).reshape((N, H, control_input_size))
                 seed_u = seed_u[:, curr_t:, :]
 
-                # if dist_nbf:
-                if Hbar == H:
+                if curr_t == 0:
                     fair_us = np.array(seed_u)
                     fair_drone_results = obj.check_avoid_constraints(fair_us)
                     fair_trial_result = max(fair_drone_results)
 
-                    fair_sol_energy = np.round(obj.quad(fair_us.flatten()), 3)
+                    fair_sol_energy = alpha * np.round(obj.quad(fair_us.flatten()), 3)
                     fair_sol_fairness1 = np.round(obj.fairness(fair_us.flatten()), 3)
                     fair_sol_fairness4 = np.round(obj.surge_fairness(fair_us.flatten()), 3)
+                    fair_planner_init_time = time.time() - fair_planner_time_start
 
-                    fair_trial_res = [t, fair_trial_result, fair_sol_energy, fair_sol_fairness1, fair_sol_fairness4]
+                    fair_trial_res = [t, fair_trial_result, fair_sol_energy, fair_sol_fairness1, fair_sol_fairness4, fair_planner_init_time, converge_iter]
                     with open('{}/trial_results_init_fair_sol.csv'.format(exp_dir), 'a') as file_obj:
                         writer_obj = writer(file_obj)
                         writer_obj.writerow(fair_trial_res)
@@ -233,6 +234,7 @@ for t in range(trials):
                 fair_planner_solver_errors += 1
                 fair_planner_error = True
         runtimes_fair_planner.append(time.time() - fair_planner_time_start)
+        fair_planner_iter.append(converge_iter)
 
         # if t == 0 and ((Hbar - H) % 5 == 0):
         #     print('Figure For Fair Trajectories')
@@ -260,6 +262,9 @@ for t in range(trials):
         #     plt.show()
 
         # print('Running Safety Planner at time {}'.format(H-Hbar))
+        n = N*Hbar*control_input_size
+        Q = np.random.randn(n, n)   # variable for quadratic objective
+        Q = Q.T @ Q  
         safe_planner_time_start = time.time()
         obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, drone_goals, drone_starts, Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
         obj.solo_energies = solo_energies
@@ -437,7 +442,7 @@ for t in range(trials):
         print('Error in Safety Planner after relaxtion')
         trial_result += 50
 
-    trial_res = [t, trial_result, sol_energy, sol_fairness1, sol_fairness4, fair_planner_avg_runtime, safe_planner_avg_runtime, relax_num, goals_made, max_missed_distance]
+    trial_res = [t, trial_result, sol_energy, sol_fairness1, sol_fairness4, np.mean(fair_planner_iter), fair_planner_avg_runtime, safe_planner_avg_runtime, relax_num, goals_made, max_missed_distance]
     with open('{}/trial_results.csv'.format(exp_dir), 'a') as file_obj:
         writer_obj = writer(file_obj)
         writer_obj.writerow(trial_res)
