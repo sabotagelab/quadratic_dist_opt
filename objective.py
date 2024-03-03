@@ -128,6 +128,9 @@ class Objective():
             if curr_t > 0:
                 if (time.time() - start_time) >= timeout:
                     break
+
+            if new_eps == 0:
+                break
         
         return u, s
 
@@ -227,7 +230,6 @@ class Objective():
                 print(e)
                 print('Agent {} Solver Error'.format(i))
                 solved_values.append(prev_eps[i])
-
 
         return solved_values
 
