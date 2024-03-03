@@ -120,7 +120,7 @@ class Objective():
 
             # Check if inputs converged
             diff = np.linalg.norm(u - prev_u)
-            print(curr_t, s, diff)
+            # print(curr_t, s, diff)
             thresh = 0.1 if curr_t > 0 else 0.01
             if diff < thresh:
                 break
