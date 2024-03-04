@@ -335,6 +335,8 @@ class Objective():
         surges = np.diff(energies)
         surges = surges - np.min(surges) / (np.max(surges) - np.min(surges))
         surge_thresh = np.mean(surges) + np.std(surges)
+        surge_thresh = 5
+        # print(' Surge Thresh', surge_thresh)
 
         agent_total_over_surge = []
         for i in range(self.N):
@@ -360,6 +362,7 @@ class Objective():
         surges = np.diff(energies)
         surges = surges - np.min(surges) / (np.max(surges) - np.min(surges))
         surge_thresh = np.mean(surges) + np.std(surges)
+        surge_thresh = 5
 
         agent_total_over_surge = []
         for i in range(self.N):
