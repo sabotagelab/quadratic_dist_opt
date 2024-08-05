@@ -2,13 +2,14 @@ import cvxpy as cp
 import numpy as np
 from scipy.optimize import Bounds, basinhopping, minimize, NonlinearConstraint
 import time
-from generate_trajectories import generate_agent_states, generate_init_traj_quad
+from generate_trajectories import generate_agent_states
 
 import warnings
 
 EPS = 1e-8
 CP_SOLVER='ECOS' # 'MOSEK' #
-SCIPY_SOLVER='SLSQP' #'L-BFGS-B' #
+# CP_SOLVER='MOSEK' #
+SCIPY_SOLVER='L-BFGS-B' # 'SLSQP' 
 
 class Objective():
     def __init__(self, N, H, system_model_config, init_states, init_pos, obstacles, targets, \
@@ -121,7 +122,8 @@ class Objective():
             # Check if inputs converged
             diff = np.linalg.norm(u - prev_u)
             # print(curr_t, s, diff)
-            thresh = 0.1 if curr_t > 0 else 0.01
+            # thresh = 0.1 if curr_t > 0 else 0.01
+            thresh = 0.2
             if diff < thresh:
                 break
             
@@ -219,7 +221,7 @@ class Objective():
                 prob.solve(verbose=False, solver=CP_SOLVER)
                 if prob.status == 'infeasible':
                     # prob.solve(verbose=True, solver=CP_SOLVER)
-                    print('Agent {} Local Solution Infeasible'.format(i))
+                    # print('Agent {} Local Solution Infeasible'.format(i))
                     # If a single agent's local solution is infeasible don't use any solution from this iteration, return empty team solution
                     # return [], []
                     solved_values.append(prev_eps[i])
@@ -558,16 +560,24 @@ class Objective():
                     B.append(Arow)
 
             h_min = np.min([h_c_min, h_o_min])
-            B = np.array(B)
-            Lfh1 = np.dot(np.dot(f_diag, np.array(state_collect).flatten()), B.T) 
-            Lgh1_u = np.dot(B, g_diag) @ u_t
-            # constraints.append(Lfh1 + Lgh1_u + h_gamma*h_min - w >= 0) 
-            constraints.append(Lfh1 + Lgh1_u + h_gamma*h_min >= 0) 
+            if len(B) > 0:
+                B = np.array(B)
+                # Lfh1 = np.dot(np.dot(f_diag, np.array(state_collect).flatten()), B.T) 
+                # Lgh1_u = np.dot(B, g_diag) @ u_t
+
+                Lfh1 = np.dot(B, f_diag @ np.array(state_collect).flatten()) 
+                Lgh1_u = np.dot(B, g_diag @ u_t)
+                # constraints.append(Lfh1 + Lgh1_u + h_gamma*h_min - w >= 0) 
+                # constraints.append(Lfh1 + Lgh1_u + h_gamma*h_min >= 0) 
+                constraints.append(B @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t) + h_gamma*h_min >= 0)
 
             C = np.array(C)
-            LfV = np.dot(np.dot(f_diag, np.array(state_collect).flatten()), C.T) 
-            LgV_u = np.dot(C, g_diag) @ u_t
-            constraints.append(LfV + LgV_u + V_alpha*V_max <= delta) 
+            # LfV = np.dot(np.dot(f_diag, np.array(state_collect).flatten()), C.T) 
+            # LgV_u = np.dot(C, g_diag) @ u_t
+            LfV = np.dot(C, f_diag @ np.array(state_collect).flatten()) 
+            LgV_u = np.dot(C, g_diag @ u_t)
+            # constraints.append(LfV + LgV_u + V_alpha*V_max <= delta) 
+            constraints.append(C @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t) + V_alpha*V_max <= delta) 
 
             # if self.N > 1:
             #     A = np.array(A)
@@ -590,20 +600,50 @@ class Objective():
 
             relaxed = False
             if cbf_controller.status in ['infeasible', 'infeasible_inaccurate']:
-                print(f"QP infeasible")
-                if last_delta is not None:
-                    print(f"attempting relaxation")
-                    constraints.pop() #delta constraint
-                    # constraints.pop() #ubox constraint
-                    # constraints.pop() #ubox constraint
-                    cbf_controller = cp.Problem(objective, constraints)
-                    cbf_controller.solve(solver=CP_SOLVER)
-                    relaxed = True
-                    if cbf_controller.status in ['infeasible', 'infeasible_inaccurate']:
-                        print(f"Relaxed problem also infeasible")
-                        raise Exception('Central Safe Problem Infeasible after relaxation')
-                else:
-                    raise Exception('Central Safe Problem Infeasible')
+                # print(f"QP infeasible")
+                print(f"attempting relaxation ubox constraint")
+                constraints.pop() #delta constraint
+                constraints.pop() #ubox constraint
+                constraints.pop() #ubox constraint
+                constraints.append(delta <= last_delta)
+                # constraints.pop() # reach constraint
+                # constraints.append(-1 * self.Ubox*3 <= u_t)
+                # constraints.append(u_t <= self.Ubox*3)
+                cbf_controller = cp.Problem(objective, constraints)
+                cbf_controller.solve(solver=CP_SOLVER)
+                relaxed = True
+                if cbf_controller.status in ['infeasible', 'infeasible_inaccurate']:
+                    if last_delta is not None:
+                        print(f"attempting relaxing delta constraint")
+                        constraints.pop() # delta constraint
+                        # constraints.pop() #ubox constraint
+                        # constraints.pop() #ubox constraint
+                        # constraints.pop() # reach constraint
+                        # constraints.append(-1 * self.Ubox*3 <= u_t)
+                        # constraints.append(u_t <= self.Ubox*3)
+                        cbf_controller = cp.Problem(objective, constraints)
+                        cbf_controller.solve(solver=CP_SOLVER)
+                        if cbf_controller.status in ['infeasible', 'infeasible_inaccurate']:
+                            print(f"Relaxed problem also infeasible")
+                            # print(cbf_controller)
+                            # print('cbf val')
+                            # print(h_min)
+                            # print('clf val')
+                            # print(V_max)
+                            # print('CBF constraint with current input')
+                            # print(B @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_fair_t.value))
+                            # print('CLF constraint with current input')
+                            # print(C @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_fair_t.value))
+                            # print('curr input')
+                            # print(u_fair_t.value)
+                            # print('last_delta')
+                            # print(last_delta)
+                            # cbf_controller.solve(solver=CP_SOLVER, verbose=True)
+                            raise Exception('Central Safe Problem Infeasible after relaxation')
+                    else:
+                        # print(cbf_controller)
+                        # cbf_controller.solve(solver=CP_SOLVER, verbose=True)
+                        raise Exception('Central Safe Problem Infeasible')
             
             for r in range(self.N):
                 idx_start = r*self.control_input_size

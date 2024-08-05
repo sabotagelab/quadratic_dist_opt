@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser(description='Optimization')
 parser.add_argument('--exp_dir', type=str, default='')
 parser.add_argument('--N', type=int, default=3)
 parser.add_argument('--trials', type=int, default=1)
-parser.add_argument('--notion', type=int, default=0)
+parser.add_argument('--notion', type=int, default=2)
 parser.add_argument('--dist', action='store_true')
 
 parser.add_argument('--exp_params', type=str, default='IROS2024_experiments/toy_params.yaml')

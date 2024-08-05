@@ -1,11 +1,13 @@
 import numpy as np
+from scipy.integrate import odeint
 from trajectorygenerationcodeandreas import quadrocoptertrajectory as quadtraj
 
 QUAD_INPUT_LIMITS = {
     'fmin': 5,  #[m/s**2]
     'fmax': 25, #[m/s**2]
     'wmax': 20, #[rad/s]
-    'minTimeSec': 0.02 #[s]
+    # 'minTimeSec': 0.02 #[s]
+    'minTimeSec': 0.04 #[s]
 }
 
 
@@ -28,7 +30,7 @@ def generate_agent_states(control_inputs, init_state, init_pos, model, dt=0.1):
     return states_array, pos_array
 
 
-def generate_init_traj_quad(init_pos, goal_pos, H, Tf=1, input_limits=QUAD_INPUT_LIMITS):
+def generate_init_traj_quad(init_pos, goal_pos, H, Tf=1, input_limits=QUAD_INPUT_LIMITS, K=None, A=None, B=None):
     # returns an array of shape (H, m), m state size, H = num_timesteps
 
     # Define the trajectory starting state:
@@ -72,14 +74,37 @@ def generate_init_traj_quad(init_pos, goal_pos, H, Tf=1, input_limits=QUAD_INPUT
     traj_pos = []
     traj_coeffs = []
     traj_accels = []  # the inputs
+    curr_pos = np.array([pos0, vel0]).flatten()
     for t in time:
-        traj_pos.append(traj.get_position(t))
-        traj_accels.append(traj.get_acceleration(t))
+        target_pos = traj.get_position(t)
+        target_vel = traj.get_velocity(t)
+        traj_pos.append(target_pos)
+        if K is not None:
+            u = K.dot(np.array([target_pos, target_vel]).flatten() - curr_pos)
+            u = np.array(u)[0]
+            curr_pos = (A @ curr_pos) + (B @ u)
+            curr_pos = curr_pos
+        else:
+            u = traj.get_acceleration(t)
+        traj_accels.append(u)
 
     return np.array(traj_pos[1:]), np.array(traj_accels[1:])
     # return np.array(traj_pos), np.array(traj_accels)
 
+def input_func(curr_pos, target_pos, K):
+    u = K.dot(curr_pos - target_pos)
+    return u
 
+def apply_dyn(curr_pos, t, traj_pos, K, A, B):
+    target_pos = traj_pos[t]
+    u = input_func(curr_pos, target_pos, K)
+    new_x = A * curr_pos + B * u
+    return new_x
+
+def generate_inputs_lqr(curr_pos, traj_pos, K, A, B):
+    t = range(len(traj_pos))
+    traj = odeint(apply_dyn, curr_pos, t, args=(traj_pos, K, A, B))
+    return traj
 
 
 ##############################################################################
