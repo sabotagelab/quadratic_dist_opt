@@ -16,17 +16,17 @@ from generate_trajectories import generate_init_traj_quad, generate_inputs_lqr, 
 
 
 EPS = 1e-2
-np.random.seed(42)
+np.random.seed(41)
 
 parser = argparse.ArgumentParser(description='Optimization')
 # MAIN VARIABLES
 parser.add_argument('--exp_dir', type=str, default='')
 parser.add_argument('--N', type=int, default=5)
 parser.add_argument('--trials', type=int, default=1)
-parser.add_argument('--notion', type=int, default=0)
+parser.add_argument('--notion', type=int, default=2)
 parser.add_argument('--dist', action='store_true')
 
-parser.add_argument('--exp_params', type=str, default='ICRA2024_experiments/exp1_params_star.yaml')
+parser.add_argument('--exp_params', type=str, default='ICRA2024_experiments/exp1_params.yaml')
 
 args = parser.parse_args()
 print(args)
@@ -67,21 +67,21 @@ nbf_dist_trade_param = safe_planner_dist_params['trade_param']
 # FIXING GOALS AND STARTS
 obstacles = {}  # RANDOMLY GENERATE OBSTACLES LATER
 if N == 5:
-    goals = {'g1': {'center': np.array([10, 5, 5]), 'radius': 0.1}, 'g2': {'center': np.array([6.545, 9.755, 5]), 'radius': 0.1}, 
-            'g3': {'center': np.array([0.955, 7.939, 5]), 'radius': 0.1}, 'g4': {'center': np.array([0.955, 2.061, 5]), 'radius': 0.1}, 
-            'g5': {'center': np.array([6.545, 0.245, 5]), 'radius': 0.1}}  # STAR
-    starts = [np.array([0.955, 7.939, 0]), np.array([0.955, 2.061, 0]), np.array([6.545, 0.245, 0]), np.array([10, 5, 0]), np.array([6.545, 9.755, 0])]  # STAR
+    # goals = {'g1': {'center': np.array([10, 5, 5]), 'radius': 0.1}, 'g2': {'center': np.array([6.545, 9.755, 5]), 'radius': 0.1}, 
+    #         'g3': {'center': np.array([0.955, 7.939, 5]), 'radius': 0.1}, 'g4': {'center': np.array([0.955, 2.061, 5]), 'radius': 0.1}, 
+    #         'g5': {'center': np.array([6.545, 0.245, 5]), 'radius': 0.1}}  # STAR
+    # starts = [np.array([0.955, 7.939, 0]), np.array([0.955, 2.061, 0]), np.array([6.545, 0.245, 0]), np.array([10, 5, 0]), np.array([6.545, 9.755, 0])]  # STAR
     
-    # # non-star
-    # starts = [np.array([0, 0, 0]), np.array([0, -4, 0]), np.array([0, 4, 0]), np.array([0, 8, 0]), np.array([0, 12, 0])]
-    # # starts = [np.array([0, 0, 0])]
-    # # starts = [np.array([0, 0, 0]), np.array([0, 2, 0])]
-    # goals = {'g1': {'center': np.array([10, 10, 5]), 'radius': 2.5}, 'g2': {'center': np.array([10, 10, 5]), 'radius': 2.5}, 
-    #         'g3': {'center': np.array([10, 10, 5]), 'radius': 2.5}, 'g4': {'center': np.array([10, 10, 5]), 'radius': 2.5}, 
-    #         'g5': {'center': np.array([10, 10, 5]), 'radius': 2.5}}
-    # # goals = {'g1': {'center': np.array([10, 10, 5]), 'radius': 1.0}}
-    # # goals = {'g1': {'center': np.array([10, 10, 5]), 'radius': 1.0}, 'g2': {'center': np.array([10, 10, 5]), 'radius': 1.0}}
-    # # N = 2
+    # non-star
+    starts = [np.array([0, 0, 0]), np.array([0, -4, 0]), np.array([0, 4, 0]), np.array([0, 8, 0]), np.array([0, 12, 0])]
+    # starts = [np.array([0, 0, 0])]
+    # starts = [np.array([0, 0, 0]), np.array([0, 2, 0])]
+    goals = {'g1': {'center': np.array([10, 10, 5]), 'radius': 2.5}, 'g2': {'center': np.array([10, 10, 5]), 'radius': 2.5}, 
+            'g3': {'center': np.array([10, 10, 5]), 'radius': 2.5}, 'g4': {'center': np.array([10, 10, 5]), 'radius': 2.5}, 
+            'g5': {'center': np.array([10, 10, 5]), 'radius': 2.5}}
+    # goals = {'g1': {'center': np.array([10, 10, 5]), 'radius': 1.0}}
+    # goals = {'g1': {'center': np.array([10, 10, 5]), 'radius': 1.0}, 'g2': {'center': np.array([10, 10, 5]), 'radius': 1.0}}
+    # N = 2
 else:
     goals = {'g1': {'center': np.array([10, 5, 5]), 'radius': 0.1}, 'g2': {'center': np.array([6.545, 9.755, 5]), 'radius': 0.1}, 
             'g3': {'center': np.array([0.955, 7.939, 5]), 'radius': 0.1}, 'g4': {'center': np.array([0.955, 2.061, 5]), 'radius': 0.1}, 
@@ -156,7 +156,7 @@ for t in range(trials):
         #         yaml.dump(obstacles, f, default_flow_style=False)
 
         num_obs = np.random.choice([1, 2, 3, 4, 5])
-        num_obs = 1
+        num_obs = 4
         for i in range(num_obs):
             obs_name = 'obs{}'.format(i)
             # block somewhere in the middle
@@ -170,9 +170,9 @@ for t in range(trials):
             # print(obstacles)
             yaml.dump(obstacles, f, default_flow_style=False)
     else:
-        with open('test_results/exp1_dist_no_fair/trial{}/obstacles.yaml'.format(t), 'r') as f:
+        # with open('test_results/exp1_dist_no_fair/trial{}/obstacles.yaml'.format(t), 'r') as f:
         # with open('test_results/exp1_star_central_no_fair/trial{}/obstacles.yaml'.format(t), 'r') as f:
-        # with open('test_results/trial{}/obstacles.yaml'.format(t), 'r') as f:
+        with open('test_results/trial{}/obstacles.yaml'.format(t), 'r') as f:
             obstacles = yaml.safe_load(f)
         num_obs = len(obstacles)
 
@@ -227,6 +227,8 @@ for t in range(trials):
     all_deltas = []
     all_J_sequences = []
     last_delta = None
+    surge_thresh = 0
+    solo_energies = []
     for Hbar in range(H, 0, -1):
         # print('Time Step {}'.format(H-Hbar))
         # GENERATE INITIAL "CONTROL INPUTS" AND TRAJECTORIES
@@ -270,10 +272,10 @@ for t in range(trials):
         #     plt.show()
 
         # GENERATE SOLO ENERGIES
-        # use the above inputs from generate_init_traj_quad to get the solo energies 
-        solo_energies = []
-        for i in range(N):
-            solo_energies.append(np.linalg.norm(init_u[i])**2)
+        # use the above inputs from generate_init_traj_quad to get the solo energies IF IT'S THE FIRST PLANNED TRAJECTORY
+        if Hbar == H:
+            for i in range(N):
+                solo_energies.append(np.linalg.norm(init_u[i])**2)
         
         # INIT SOLVER
         # n = N*Hbar*control_input_size
@@ -367,7 +369,7 @@ for t in range(trials):
                 cbf_values.append(cbfs)
                 clf_values.append(clfs)
             else:
-                final_u, cbf_value, clf_value, nbf_delta, h_os, h_cs, Vs, relaxed = obj.solve_nbf(seed_u=seed_u, last_delta=last_delta, mpc=True, h_gamma=h_gamma, V_alpha=V_alpha)
+                final_u, cbf_value, clf_value, nbf_delta, h_os, h_cs, Vs, relaxed = obj.solve_nbf(seed_u, last_delta=last_delta, mpc=True, h_gamma=h_gamma, V_alpha=V_alpha)
                 final_u = np.array(final_u)  # H, N, control_input    
                 final_u = final_u.transpose(1, 0, 2)  # N, H, control_input
                 cbf_values.append(cbf_value)

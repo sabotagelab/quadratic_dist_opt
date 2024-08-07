@@ -121,21 +121,15 @@ class Objective():
 
             # Check if inputs converged
             diff = np.linalg.norm(u - prev_u)
-            # print(curr_t, s, diff)
-            # thresh = 0.1 if curr_t > 0 else 0.01
             thresh = 0.2
             if diff < thresh:
                 break
-            
             if curr_t > 0:
                 if (time.time() - start_time) >= timeout:
                     break
-
             if new_eps == 0:
                 break
-        
         return u, s
-
 
     def solve_local(self, u, curr_t, prev_eps, dyn='simple'):
         control_input_size = self.control_input_size
@@ -144,7 +138,6 @@ class Objective():
         u_param = cp.Parameter(F, value=u)
 
         # Get the partial derivatives
-        # grad_quad = self.quad(u, grad=True).reshape(self.N, control_input_size * self.H)
         grad_quad = self.quad(u, grad=True).reshape(self.N, control_input_size * self.H)
         if self.notion in [3, 5]:
             grad_fairness = self.surge_fairness(u, grad=True)
@@ -222,19 +215,17 @@ class Objective():
                 if prob.status == 'infeasible':
                     # prob.solve(verbose=True, solver=CP_SOLVER)
                     # print('Agent {} Local Solution Infeasible'.format(i))
-                    # If a single agent's local solution is infeasible don't use any solution from this iteration, return empty team solution
-                    # return [], []
-                    solved_values.append(prev_eps[i])
+                    # If a single agent's local solution is infeasible don't use any solution from this iteration
+                    solved_values.append(np.zeros_like(prev_eps[i]))
                 else:
                     solved_values.append(eps.value)
             except Exception as e:
-                # Try to catch solver error. If an agent runs into solver error, catch and use previous agent's solution
+                # Try to catch solver error. If an agent runs into solver error, don't modify input
                 print(e)
                 print('Agent {} Solver Error'.format(i))
-                solved_values.append(prev_eps[i])
-
+                solved_values.append(np.zeros_like(prev_eps[i]))
+        
         return solved_values
-
             
     ##########################################################
     # Reach Constraint
@@ -251,9 +242,7 @@ class Objective():
             target_center = self.targets[i]['center']
             target_radius = self.targets[i]['radius']
             reach = np.maximum(reach, np.linalg.norm(final_pos - target_center) - target_radius)
-            
         return reach
-
     
     ##########################################################
     # Fairness Notions
@@ -282,12 +271,12 @@ class Objective():
             mean_energy_magnitude = 0
         else:
             mean_energy_magnitude = int(np.floor(np.log10(mean_energy)))
+        # scale down magnitude
         agent_norm_energies = agent_norm_energies * 10**(-mean_energy_magnitude)
-            
         mean_energy = np.mean(agent_norm_energies)
         diffs = 0
         for i in range(self.N):
-            diffs += (np.linalg.norm(agent_norm_energies[i] - mean_energy)) ** 2
+            diffs += (agent_norm_energies[i] - mean_energy) ** 2
     
         fairness = 1/(self.N) * np.sum(diffs)
         return fairness
@@ -307,9 +296,8 @@ class Objective():
         mean_energy = np.mean(agent_norm_energies)
         partials = []
         for i in range(self.N):
-            grad = 2 * (1/self.N) * (np.linalg.norm(agent_norm_energies[i] - mean_energy))
+            grad = 2 * (1/self.N) * (agent_norm_energies[i] - mean_energy)
             partials.append(grad)
-            
         return partials
 
     def surge_fairness(self, u, grad=False):
@@ -323,59 +311,50 @@ class Objective():
         control_input_size = self.control_input_size
 
         u_reshape = u.reshape((self.N, self.H, control_input_size))
-        energies = np.linalg.norm(u_reshape, axis=2)**2
-        
-        # scale down magnitude
-        agent_mean_energies = np.mean(energies)
+        agent_energies = np.linalg.norm(u_reshape, axis=2)**2
+        for i in range(self.N):
+            agent_energies[i] /= self.solo_energies[i] + EPS
+        agent_mean_energies = np.mean(agent_energies)
         if agent_mean_energies == 0:
             mean_energy_magnitude = 0
         else:
             mean_energy_magnitude = int(np.floor(np.log10(agent_mean_energies)))
+        # scale down magnitude
+        agent_energies = agent_energies * 10**(-mean_energy_magnitude)
+        surges = np.abs(np.diff(agent_energies))
 
-        energies = energies * 10**(-mean_energy_magnitude)
-        
-        surges = np.diff(energies)
-        surges = surges - np.min(surges) / (np.max(surges) - np.min(surges))
-        surge_thresh = np.mean(surges) + np.std(surges)
-        surge_thresh = 5
-        # print(' Surge Thresh', surge_thresh)
-
-        agent_total_over_surge = []
+        agent_max_surge = []
         for i in range(self.N):
-            agent_total_over_surge.append(np.sum(surges[i] - surge_thresh))
+            agent_max_surge.append(np.mean(surges[i]))
     
-        fairness = np.var(agent_total_over_surge)
+        fairness = np.var(agent_max_surge)
         return fairness
 
     def _surge_fairness_local(self, u):
         control_input_size = self.control_input_size
 
         u_reshape = u.reshape((self.N, self.H, control_input_size))
-        energies = np.linalg.norm(u_reshape, axis=2)**2
-        
-        # scale down magnitude
-        agent_mean_energies = np.mean(energies)
+        agent_energies = np.linalg.norm(u_reshape, axis=2)**2
+        for i in range(self.N):
+            agent_energies[i] /= self.solo_energies[i] + EPS
+        agent_mean_energies = np.mean(agent_energies)
         if agent_mean_energies == 0:
             mean_energy_magnitude = 0
         else:
             mean_energy_magnitude = int(np.floor(np.log10(agent_mean_energies)))
-        energies = energies * 10**(-mean_energy_magnitude)
+        # scale down magnitude
+        agent_energies = agent_energies * 10**(-mean_energy_magnitude)
+        surges = np.abs(np.diff(agent_energies))
         
-        surges = np.diff(energies)
-        surges = surges - np.min(surges) / (np.max(surges) - np.min(surges))
-        surge_thresh = np.mean(surges) + np.std(surges)
-        surge_thresh = 5
-
-        agent_total_over_surge = []
+        agent_max_surge = []
         for i in range(self.N):
-            agent_total_over_surge.append(np.sum(surges[i] - surge_thresh))
+            agent_max_surge.append(np.mean(surges[i]))
         
-        mean_agent_surge = np.mean(agent_total_over_surge)
+        mean_agent_surge = np.mean(agent_max_surge)
         partials = []
         for i in range(self.N):
-            grad = 2 * (1/self.N) * (agent_total_over_surge[i] - mean_agent_surge)
+            grad = 2 * (1/self.N) * (agent_max_surge[i] - mean_agent_surge)
             partials.append(grad)   
-
         return partials
     
 
@@ -430,14 +409,13 @@ class Objective():
                 drone_collide = 3
                 break
         return max(drone_hit_reach, drone_collide)
-                       
     
 
     ##########################################################
     # Online Solution (Obstacle Avoidance and Mutual Separation Only)
     ###########################################################
 
-    def solve_nbf(self, last_delta=None, seed_u=None, mpc=False, h_gamma=1, V_alpha=1):
+    def solve_nbf(self, seed_u, last_delta=None, mpc=False, h_gamma=1, V_alpha=1):
         # Centrally Solve for Obstacle Avoidance
         f = self.f
         g = self.g
@@ -466,33 +444,13 @@ class Objective():
         final_u = []
         for t in range(self.H):
             u_refs_fair = []
-            u_refs = []
-            target_pos = []
             state_collect = []
             constraints = []
             for r in range(self.N):
                 state_collect.append(robots[r].state)
-                if seed_u is not None:
-                    u_refs_fair.append(seed_u[r, t, :])
-                    continue
-                kx = 0.7
-                kv = 1.8 if self.N < 10 else 1.6 if self.N in [10, 15] else 1.5
-                # rn = self.rn[r]
-                rn = 0
-                leftright = 1 if r % 2 == 0 else -1
-                x_adj = 1 if r % 2 == 0 else 0
-                z_adj = 1 if (r % 3 == 0) and self.N >= 10 else 0
-                pos_adj = np.array([x_adj, 1, z_adj]) 
-                velocity_desired = - kx * ( robots[r].state[0:3] - (self.targets['center'] + leftright*r*self.safe_dist*pos_adj) )
-                u_desired = - kv * ( robots[r].state[3:6] - velocity_desired )
-                u_refs.append(u_desired)
-                target = robots[r].state[0:3] + (rn + robots[r].state[3:6]*self.dt) + 0.5*u_desired*self.dt**2
-                target_pos.append(target)
-
-            if seed_u is not None:
-                u_fair_t.value = np.array(u_refs_fair).flatten()
-            else:
-                u_ref_t.value = np.array(u_refs).flatten()
+                u_refs_fair.append(seed_u[r, t, :])
+            
+            u_fair_t.value = np.array(u_refs_fair).flatten()
             
             # NBFs
             h_c_min = 9999
@@ -509,7 +467,7 @@ class Objective():
                 pos = robots[r].state[0:3]
                 for obsId, obs in self.obstacles.items():
                     c = obs['center']
-                    rad = obs['radius'] + self.safe_dist  # + 1
+                    rad = obs['radius'] + self.safe_dist
                     h_o = (pos[0] - c[0])**2 + (pos[1] - c[1])**2 + (pos[2] - c[2])**2 - rad**2
                     h_os.append(h_o)
                     h_o_min = np.min([h_o_min, h_o])
@@ -517,14 +475,6 @@ class Objective():
                     Brow_end = [0 for i in range((r+1)*6, self.N*6)]
                     Brow = Brow_start + [2*(pos[0] - c[0]), 2*(pos[1] - c[1]), 2*(pos[2] - c[2]), 0, 0, 0] + Brow_end
                     B.append(Brow)
-                # ground avoidance
-                # h_g = pos[2]**2
-                # h_os.append(h_g)
-                # h_o_min = np.min([h_o_min, h_g])
-                # Brow_start = [0 for i in range(r*6)]
-                # Brow_end = [0 for i in range((r+1)*6, self.N*6)]
-                # Brow = Brow_start + [0, 0, 2*pos[2], 0, 0, 0] + Brow_end
-                # B.append(Brow)
 
                 # reach goal
                 cg = self.targets[r]['center']
@@ -562,28 +512,14 @@ class Objective():
             h_min = np.min([h_c_min, h_o_min])
             if len(B) > 0:
                 B = np.array(B)
-                # Lfh1 = np.dot(np.dot(f_diag, np.array(state_collect).flatten()), B.T) 
-                # Lgh1_u = np.dot(B, g_diag) @ u_t
-
-                Lfh1 = np.dot(B, f_diag @ np.array(state_collect).flatten()) 
-                Lgh1_u = np.dot(B, g_diag @ u_t)
-                # constraints.append(Lfh1 + Lgh1_u + h_gamma*h_min - w >= 0) 
-                # constraints.append(Lfh1 + Lgh1_u + h_gamma*h_min >= 0) 
+                # Lfh1 = np.dot(B, f_diag @ np.array(state_collect).flatten()) 
+                # Lgh1_u = np.dot(B, g_diag @ u_t)
                 constraints.append(B @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t) + h_gamma*h_min >= 0)
 
             C = np.array(C)
-            # LfV = np.dot(np.dot(f_diag, np.array(state_collect).flatten()), C.T) 
-            # LgV_u = np.dot(C, g_diag) @ u_t
-            LfV = np.dot(C, f_diag @ np.array(state_collect).flatten()) 
-            LgV_u = np.dot(C, g_diag @ u_t)
-            # constraints.append(LfV + LgV_u + V_alpha*V_max <= delta) 
-            constraints.append(C @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t) + V_alpha*V_max <= delta) 
-
-            # if self.N > 1:
-            #     A = np.array(A)
-            #     Lfh2 = np.dot(np.dot(f_diag, np.array(state_collect).flatten()), A.T) 
-            #     Lgh2_u = np.dot(A, g_diag) @ u_t
-            #     constraints.append(Lfh2 + Lgh2_u + h_gamma*h_min >= 0) 
+            # LfV = np.dot(C, f_diag @ np.array(state_collect).flatten()) 
+            # LgV_u = np.dot(C, g_diag @ u_t)
+            constraints.append(C @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t) + V_alpha*V_max <= delta)
 
             # constraints.append(w >= 0)
             # Ubox constraint
@@ -606,9 +542,6 @@ class Objective():
                 constraints.pop() #ubox constraint
                 constraints.pop() #ubox constraint
                 constraints.append(delta <= last_delta)
-                # constraints.pop() # reach constraint
-                # constraints.append(-1 * self.Ubox*3 <= u_t)
-                # constraints.append(u_t <= self.Ubox*3)
                 cbf_controller = cp.Problem(objective, constraints)
                 cbf_controller.solve(solver=CP_SOLVER)
                 relaxed = True
@@ -616,35 +549,16 @@ class Objective():
                     if last_delta is not None:
                         print(f"attempting relaxing delta constraint")
                         constraints.pop() # delta constraint
-                        # constraints.pop() #ubox constraint
-                        # constraints.pop() #ubox constraint
-                        # constraints.pop() # reach constraint
-                        # constraints.append(-1 * self.Ubox*3 <= u_t)
-                        # constraints.append(u_t <= self.Ubox*3)
                         cbf_controller = cp.Problem(objective, constraints)
                         cbf_controller.solve(solver=CP_SOLVER)
                         if cbf_controller.status in ['infeasible', 'infeasible_inaccurate']:
                             print(f"Relaxed problem also infeasible")
-                            # print(cbf_controller)
-                            # print('cbf val')
-                            # print(h_min)
-                            # print('clf val')
-                            # print(V_max)
-                            # print('CBF constraint with current input')
-                            # print(B @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_fair_t.value))
-                            # print('CLF constraint with current input')
-                            # print(C @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_fair_t.value))
-                            # print('curr input')
-                            # print(u_fair_t.value)
-                            # print('last_delta')
-                            # print(last_delta)
                             # cbf_controller.solve(solver=CP_SOLVER, verbose=True)
                             raise Exception('Central Safe Problem Infeasible after relaxation')
                     else:
                         # print(cbf_controller)
                         # cbf_controller.solve(solver=CP_SOLVER, verbose=True)
                         raise Exception('Central Safe Problem Infeasible')
-            
             for r in range(self.N):
                 idx_start = r*self.control_input_size
                 idx_end = idx_start + self.control_input_size
@@ -673,31 +587,27 @@ class Objective():
         # append 0 to end of seed_input for delta var
         seed_input = np.concatenate((seed_input, np.zeros((seed_input.shape[0], 1))), axis=1)
         
-        # INTIALIZE LOCAL CONSTRAINTS
-        agent_gammas = []
+        # INTIALIZE CONSTRAINTS
+        agent_Gammas = []
         agent_Ais = []
-        agent_bis = []
         uis = []
         cbfs = []
         clfs = []
         for i in range(self.N):
-            g, Ai, bi, cbf_val, clf_val = self.init_local_constraints(i, agent_target_pos, h_i=h_i, h_o=h_o, h_v=h_v)
-            agent_gammas.append(g)
+            Ai, gammas, cbf_val, clf_val = self.get_constraints(i, agent_target_pos)
+            agent_Gammas.append(gammas)
             agent_Ais.append(Ai)
-            agent_bis.append(bi)
             cbfs.append(cbf_val)
             clfs.append(clf_val)
             ui = seed_input[i]
-            ui_full = np.hstack([ui, g])
-            uis.append(ui_full)
+            uis.append(ui)
+            # neighbor_inputs = np.delete(seed_input, i, axis=0)
+            # static_inputs = np.zeros(3*(len(self.obstacles)+1))
+            # ui_full = np.hstack([ui, neighbor_inputs.flatten(), static_inputs])
+            # uis.append(ui_full)
 
+        # Initialize trackers for TRADES ALG
         self.init_uis_dist_nbf = uis
-
-        # check that it is full row rank
-        # full_ai = np.hstack(agent_Ais)
-        # Asquare = np.dot(full_ai, full_ai.T)
-        # Asquare_invert = np.linalg.inv(Asquare)
-        
         m = Ai.shape[0]
         lambdas = [np.ones(m) for i in range(self.N)]
         zis = [0 for i in range(self.N)]
@@ -705,12 +615,9 @@ class Objective():
 
         # Repeat below until convergence, auxiliary variables in ui will converge to match the neighbors control inputs in all ujs
         last_deltas = [9999 for i in range(self.N)]
-        # agent_alg1_running = [True for i in range(self.N)]
         is_converged = False
         all_Js = []
         for p in range(100):
-            # if not all(agent_alg1_running):
-            #     break
             if is_converged:
                 break
             # use to get all current phi_i for this iteration
@@ -721,7 +628,7 @@ class Objective():
             new_yis = []
             for i in range(self.N):
                 # Compute lines 3-6 of Alg 1
-                ui_p, lambda_p, zi_p, yi_p = self.trades(i, uis, seed_input, last_deltas[i], agent_Ais, agent_bis, agent_phi_i, 
+                ui_p, lambda_p, zi_p, yi_p = self.trades(i, uis, seed_input, last_deltas[i], agent_Ais, agent_Gammas, agent_phi_i, 
                                                          lambdas, zis, yis, step_size=step_size, trade_param=trade_param)
                 new_uis.append(ui_p)
                 new_lambdas.append(lambda_p)
@@ -745,104 +652,89 @@ class Objective():
             all_Js.append(Ji)
         
         return np.array(uis)[:,0:4], all_Js, cbfs, clfs
-
     
-    def init_local_constraints(self, agent_id, target_poses, h_i=1, h_o=1, h_v=1):
-        # Computes Ai, ui, and all auxiliary variables (gamma_i) in compact form (see equation 8 of Margellos paper)
-
-        # Calculate Target Position Coordinates Based on Seed Input
-        # Compute Error Dynamics
-        # Compute Auxiliary variables with for all other agents
-
-        # Get Target Position Coordinates Based on Seed Input
-        agent_actual_vel = self.init_states[agent_id][0:3]
-        agent_target_pos = target_poses[agent_id][0]
+    def get_constraints(self, agent_id, target_poses, h_i=1, h_o=1, h_v=1):
+        # Compute each v_c and Gamma_ij (see equation 8 of Margellos paper)
         
-        # Compute Error Dynamics
+        # Get agent information
+        agent_target_pos = target_poses[agent_id][0:3]
         agent_error_dyn = self.init_states[agent_id][0:3] - agent_target_pos
+        agent_actual_vel = self.init_states[agent_id][0:3]
 
-        # Compute Auxiliary variables with for all other agents
-        gammas = []
-        Ai = []
-        h_ij_vals = []
-        h_obj_vals = []
+        constraint_array = []
+        Gamma_ijs = []
+        # compute pairwise constraints and Gammas for other drones
         for j in range(self.N):
             if j == agent_id:
                 continue
-            actual_dist = self.init_pos[agent_id] - self.init_pos[j]
-            
-            neighbor_actual_vel = self.init_states[j][0:3]
+            # get neighbor information            
             neighbor_target_pos = target_poses[j][0]
             neighbor_error_dyn = self.init_states[j][0:3] - neighbor_target_pos
+            neighbor_actual_vel = self.init_states[j][0:3]
+
             # Compute Deltas
             delta_p = agent_target_pos - neighbor_target_pos
             delta_v = agent_actual_vel - neighbor_actual_vel
-            
-            # Compute tij 
-            ## ABS BARRIER FUNC
-            hij = np.sum(np.abs(agent_error_dyn - neighbor_error_dyn + delta_p) / self.safe_dist) - 1
-            tij = 2/(self.dt**2) * h_i * hij + \
-                2/self.dt*(1/self.safe_dist*np.sum(np.sign(actual_dist) * delta_v))
-            ## NORM BARRIER FUNC
-            # hij = np.linalg.norm(agent_error_dyn - neighbor_error_dyn + delta_p)**2 - self.safe_dist**2
-            # tij = 2/(self.dt**2) * h_i * hij + \
-            #     2/self.dt*(1/self.safe_dist*np.sum(np.sign(actual_dist) * delta_v))
-            gammas.append(tij)
-            Ai.append(-1 * np.sign(actual_dist))
-            h_ij_vals.append(hij)
 
-        # append tij for static obstacles as well (delta_v is 0 and self.safe_dist == obstacle radius)
+            # Compute h_ij (equation 6 in Margellos paper)
+            h_ij = 1./self.safe_dist * (np.abs(agent_error_dyn[0] - neighbor_error_dyn[0] + delta_p[0]) + \
+                                        np.abs(agent_error_dyn[1] - neighbor_error_dyn[1] + delta_p[1]) + \
+                                        np.abs(agent_error_dyn[2] - neighbor_error_dyn[2] + delta_p[2])) - 1
+            # Compute Gamma_ij
+            gij = 2./(self.dt**2) * h_i * h_ij + \
+                2./(self.dt) * (1./self.safe_dist * (np.sign(delta_p[0]) * delta_v[0] + \
+                                                     np.sign(delta_p[1]) * delta_v[1] + \
+                                                     np.sign(delta_p[2]) * delta_v[2]))
+            # Compute v_c array (see equation 8 in Margellos paper), extra 0 for delta variable
+            v_c = np.array([np.sign(delta_p[0])/self.safe_dist, np.sign(delta_p[1])/self.safe_dist, np.sign(delta_p[2])/self.safe_dist, 0])
+            vc_full = -v_c #np.concatenate([-v_c, v_c])
+            constraint_array.append(vc_full)
+            Gamma_ijs.append(gij)
+
+        # compute pairwise constraints and Gammas for static obstacles
         for obsId, obs in self.obstacles.items():
-            obj_actual_dist = self.init_pos[agent_id] - obs['center']
-            delta_obj_p = agent_target_pos - obs['center']
-            ## ABS BARRIER FUNC
-            hi_obj = np.sum(np.abs(agent_error_dyn + delta_obj_p) / obs['radius']) - 1
-            ti_obj = 2/(self.dt**2) * h_o * hi_obj + \
-                2/self.dt*(1/obs['radius']*np.sum(np.sign(obj_actual_dist) * agent_actual_vel))
-            ## NORM BARRIER FUNC
-            # hi_obj = np.linalg.norm(agent_error_dyn + delta_obj_p)**2 - obs['radius']**2
-            # ti_obj = 2/(self.dt**2) * h_o * hi_obj + \
-            #     2/self.dt*(1/self.obstacles['radius']*np.sum(np.sign(obj_actual_dist) * agent_actual_vel))
-            gammas.append(ti_obj)
-            Ai.append(-1 * np.sign(obj_actual_dist))
-            h_obj_vals.append(hi_obj)
-        
-        # append tij for the lyapunov function (similar to static obstacle case but negative because we want to go to target)
-        target_actual_dist = self.init_pos[agent_id] - self.targets[agent_id]['center']
-        delta_target_p = agent_target_pos - self.targets[agent_id]['center']
-        ## ABS BARRIER FUNC
-        vi_target = np.sum((np.abs(agent_error_dyn + delta_target_p) / self.targets[agent_id]['radius'])) - 1
-        ti_target = 2/(self.dt**2) * h_v * vi_target + \
-            2/self.dt*(1/self.targets[agent_id]['radius']*np.sum(np.sign(target_actual_dist) * agent_actual_vel))
-        ## NORM BARRIER FUNC
-        # vi_target = np.linalg.norm(agent_error_dyn + delta_target_p)**2 - self.targets[agent_id]['radius']**2
-        # ti_target = 2/(self.dt**2) * h_v * vi_target + \
-        #     2/self.dt*(1/self.targets[agent_id]['radius']*np.sum(np.sign(target_actual_dist) * agent_actual_vel))
-        gammas.append(ti_target)
-        Ai.append(np.sign(target_actual_dist))
+            # Compute Deltas
+            delta_p = agent_target_pos - obs['center']
+            delta_v = agent_actual_vel
 
-        Ai = np.array(Ai)
-        
-        n_p = np.array(gammas).size
-        
-        # for the additional delta decision variable 
-        delta_col = np.zeros((Ai.shape[0], 1))
-        delta_col[self.N] = -1
-        Ai = np.append(Ai, delta_col, axis=1)  
-        
-        # -1 for each auxiliary variable (except CLF constraint)
-        aux_col = -1 * np.ones((Ai.shape[0], 1))
-        aux_col[self.N] = 1
-        Ai = np.append(Ai, aux_col, axis=1)
+            # Compute h_ij (equation 6 in Margellos paper)
+            h_ij = 1./obs['radius'] * (np.abs(agent_error_dyn[0] + delta_p[0]) + \
+                                        np.abs(agent_error_dyn[1] + delta_p[1]) + \
+                                        np.abs(agent_error_dyn[2] + delta_p[2])) - 1
+            # Compute Gamma_ij
+            gij = 2./(self.dt**2) * h_o * h_ij + \
+                2./(self.dt) * (1./obs['radius'] * (np.sign(delta_p[0]) * delta_v[0] + \
+                                                     np.sign(delta_p[1]) * delta_v[1] + \
+                                                     np.sign(delta_p[2]) * delta_v[2]))
+            # Compute v_c array (see equation 8 in Margellos paper)
+            v_c = np.array([np.sign(delta_p[0])/obs['radius'], np.sign(delta_p[1])/obs['radius'], np.sign(delta_p[2])/obs['radius'], 0])
+            vc_full = -v_c #np.concatenate([-v_c, v_c])
+            constraint_array.append(vc_full)
+            Gamma_ijs.append(gij)
 
-        # append all the zeros
-        Ai = np.append(Ai, np.zeros((Ai.shape[0], n_p - 1)), axis=1)
-        bi = np.zeros((Ai.shape[0], 1))
-
-        cbf_val = min(np.min(h_ij_vals), np.min(h_obj_vals))
-        clf_val = vi_target
-
-        return gammas, Ai, bi, cbf_val, clf_val
+        # compute pairwise constraint for goal
+        target = self.targets[agent_id]
+        delta_p = agent_target_pos - target['center']
+        delta_v = agent_actual_vel
+        # Compute h_ij (equation 6 in Margellos paper)
+        h_ij = 1./target['radius'] * (np.abs(agent_error_dyn[0] + delta_p[0]) + \
+                                    np.abs(agent_error_dyn[1] + delta_p[1]) + \
+                                    np.abs(agent_error_dyn[2] + delta_p[2])) - 1
+        # Compute Gamma_ij
+        gij = 2./(self.dt**2) * h_v * h_ij + \
+            2./(self.dt) * (1./target['radius'] * (np.sign(delta_p[0]) * delta_v[0] + \
+                                                    np.sign(delta_p[1]) * delta_v[1] + \
+                                                    np.sign(delta_p[2]) * delta_v[2]))
+        # Compute v_c array (see equation 8 in Margellos paper)  # add negative 1 for delta
+        v_c = np.array([np.sign(delta_p[0])/target['radius'], np.sign(delta_p[1])/target['radius'], np.sign(delta_p[2])/target['radius'], -1])
+        vc_full = v_c #np.concatenate([v_c, -v_c])
+        constraint_array.append(vc_full)
+        Gamma_ijs.append(-1 * gij)
+        
+        cbf_val = np.min(Gamma_ijs)
+        clf_val = gij
+        
+        return np.array(constraint_array), np.array(Gamma_ijs), cbf_val, clf_val
     
     def trades_sigma(self, proposed_inputs, fair_inputs, grad=False, return_all=False):
         # the aggregative vector for the cost function J, which is the average distance to fair inputs
@@ -872,14 +764,14 @@ class Objective():
         
 
     def trades(self, agent_id, current_inputs, seed_input, last_delta, Ais, bis, phi,
-               lambdas, zis, yis, step_size=0.01, trade_param=0.8):
+               lambdas, zis, yis, step_size=0.01, trade_param=0.8, c=1.5):
         # Implement lines 3-6 of Algorithm 1 from Margellos paper
         # (but for horizon = 1, that is, returned ui for each agent is what they should do for next time step, 
         # no future timesteps computed)
 
         # let network parameter wij be 1/N-1 (ie one over all neighbors) for all neighbors
         wij = 1 / (self.N - 1)
-        rho = 1.5 * step_size * trade_param / wij
+        rho = c * step_size * trade_param / wij
 
         ui_full = current_inputs[agent_id]
 
@@ -908,7 +800,7 @@ class Objective():
             yi_p += wij * yis[i] + wij * self.N * (np.dot(Ais[i], uj_full) - bis[i]) 
 
         zi_p = zi_p - phi[agent_id]
-        yi_p = yi_p - self.N * (np.dot(Ais[i], ui_full) - bis[i]) 
+        yi_p = yi_p - self.N * (np.dot(Ais[agent_id], ui_full) - bis[agent_id]) 
         return ui_p, lambda_p, zi_p, yi_p
         
 
@@ -921,12 +813,12 @@ class Objective():
             partial_2 = 1
             return partial_1, partial_2
         else:
-            # OBJECTIVE FUNCTION, MINIMIZE AGENT'S OWN DISTANCE TO SEED_INPUTS (THE FAIR INPUTS) and THE AVERAGAE OF AGGREGATE DISTANCE SIGMA
+            # OBJECTIVE FUNCTION, MINIMIZE AGENT'S OWN DISTANCE TO SEED_INPUTS (THE FAIR INPUTS) and THE AVERAGE OF AGGREGATE DISTANCE SIGMA
             return np.linalg.norm(np.array(agent_proposed_input)[:,0:4] - np.array(agent_seed_input)[:,0:4])**2 + second_arg  # second arg is the aggregate vector sigma representing distance to all fair inputs
         
     def trades_F_i(self, agent_proposed_input, agent_seed_input, second_arg):
         # pseudo gradient of J_i
-        partial_1_J_i, partial_2_j_i = self.trades_J_i(agent_proposed_input, agent_seed_input, second_arg, grad=True)  # here phi is partial of phi for agent i
+        partial_1_J_i, partial_2_j_i = self.trades_J_i(agent_proposed_input, agent_seed_input, second_arg, grad=True)
         partial_phi_i = self.trades_phi_i(agent_proposed_input, agent_seed_input, grad=True)
         return partial_1_J_i + (partial_phi_i / self.N) * partial_2_j_i
 
@@ -938,15 +830,14 @@ class Objective():
 
         res = 0
         for i in range(m):
-            res += np.dot(np.maximum(rho * s1[i] + s2[i], 0), Ai.T[i])
-        
+            res += np.dot(np.maximum(rho * s1[i] + s2[i], 0), Ai[i])
         return res
 
     def trades_G_i_dual(self, agent_proposed_input, Ai, bi, yi, lambda_i, rho):
         # dual psuedo gradient of constraints
         m = Ai.shape[0]
-        # e = np.eye(m)
-        e = Ai.T
+        e = np.eye(m)
+        # e = Ai.T
 
         s1 = self.N * (np.dot(Ai, agent_proposed_input) - bi) + yi
         s2 = lambda_i
@@ -970,8 +861,4 @@ class Objective():
             v[3] = last_delta
         if v[3] < 0:
             v[3] = 0
-        
-        # keep the static obstacle cbf and clf values constant
-        num_coupling_constraints = int(self.N * (self.N - 1) / 2)
-        v[4:4+num_coupling_constraints] = init_uis[4:4+num_coupling_constraints]
         return v
