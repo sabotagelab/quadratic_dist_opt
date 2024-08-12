@@ -16,7 +16,7 @@ from generate_trajectories import generate_init_traj_quad, generate_inputs_lqr, 
 
 
 EPS = 1e-2
-np.random.seed(42)
+np.random.seed(41)
 
 parser = argparse.ArgumentParser(description='Optimization')
 # MAIN VARIABLES
@@ -26,7 +26,7 @@ parser.add_argument('--trials', type=int, default=1)
 parser.add_argument('--notion', type=int, default=2)
 parser.add_argument('--dist', action='store_true')
 
-parser.add_argument('--exp_params', type=str, default='ICRA2024_experiments/exp1_params.yaml')
+parser.add_argument('--exp_params', type=str, default='ICRA2024_experiments/exp2_params.yaml')
 
 args = parser.parse_args()
 print(args)
@@ -64,55 +64,24 @@ h_v = safe_planner_dist_params['hv']
 nbf_dist_step_size = safe_planner_dist_params['step_size']
 nbf_dist_trade_param = safe_planner_dist_params['trade_param']
 
-# FIXING GOALS AND STARTS
-obstacles = {}  # RANDOMLY GENERATE OBSTACLES LATER
+obstacles = exp_params['obstacles']
+goals = exp_params['goals']
+starts = exp_params['starts']
+print(obstacles)
+print(goals)
+print(starts)
 if N == 5:
-    # goals = {'g1': {'center': np.array([10, 5, 5]), 'radius': 0.1}, 'g2': {'center': np.array([6.545, 9.755, 5]), 'radius': 0.1}, 
-    #         'g3': {'center': np.array([0.955, 7.939, 5]), 'radius': 0.1}, 'g4': {'center': np.array([0.955, 2.061, 5]), 'radius': 0.1}, 
-    #         'g5': {'center': np.array([6.545, 0.245, 5]), 'radius': 0.1}}  # STAR
-    # starts = [np.array([0.955, 7.939, 0]), np.array([0.955, 2.061, 0]), np.array([6.545, 0.245, 0]), np.array([10, 5, 0]), np.array([6.545, 9.755, 0])]  # STAR
-    
-    # non-star
-    starts = [np.array([0, 0, 0]), np.array([0, -4, 0]), np.array([0, 4, 0]), np.array([0, 8, 0]), np.array([0, 12, 0])]
-    # starts = [np.array([0, 0, 0])]
-    # starts = [np.array([0, 0, 0]), np.array([0, 2, 0])]
-    goals = {'g1': {'center': np.array([10, 10, 5]), 'radius': 2.5}, 'g2': {'center': np.array([10, 10, 5]), 'radius': 2.5}, 
-            'g3': {'center': np.array([10, 10, 5]), 'radius': 2.5}, 'g4': {'center': np.array([10, 10, 5]), 'radius': 2.5}, 
-            'g5': {'center': np.array([10, 10, 5]), 'radius': 2.5}}
-    # goals = {'g1': {'center': np.array([10, 10, 5]), 'radius': 1.0}}
-    # goals = {'g1': {'center': np.array([10, 10, 5]), 'radius': 1.0}, 'g2': {'center': np.array([10, 10, 5]), 'radius': 1.0}}
-    # N = 2
+    goal_assignments = [1, 1, 1, 1, 1]
+elif N == 7:
+    goal_assignments = [1, 1, 1, 1, 1, 2, 2]
+elif N == 10:
+    goal_assignments = [1, 1, 1, 1, 1, 2, 2, 2, 2, 2]
+elif N == 12:
+    goal_assignments = [1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3]
 else:
-    goals = {'g1': {'center': np.array([10, 5, 5]), 'radius': 0.1}, 'g2': {'center': np.array([6.545, 9.755, 5]), 'radius': 0.1}, 
-            'g3': {'center': np.array([0.955, 7.939, 5]), 'radius': 0.1}, 'g4': {'center': np.array([0.955, 2.061, 5]), 'radius': 0.1}, 
-            'g5': {'center': np.array([6.545, 0.245, 5]), 'radius': 0.1}, # STAR
-            'g6': {'center': np.array([5, 10, 5]), 'radius': 0.1}, 'g7': {'center': np.array([0.245, 6.545, 5]), 'radius': 0.1}, 
-            'g8': {'center': np.array([2.061, 0.955, 5]), 'radius': 0.1}, 'g9': {'center': np.array([7.939, 0.955, 5]), 'radius': 0.1}, 
-            'g10': {'center': np.array([9.755, 6.545, 5]), 'radius': 0.1}, 
-            }  
-    starts = [np.array([0.955, 7.939, 0]), np.array([0.955, 2.061, 0]), np.array([6.545, 0.245, 0]), np.array([10, 5, 0]), np.array([6.545, 9.755, 0]), # STAR
-              np.array([4.5, 5, 0]), np.array([4.7, 5, 0]), np.array([4.9, 5, 0]), np.array([5.1, 5, 0]), np.array([5.3, 5, 0])]
+    goal_assignments = [1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3]
 
 dt = Tf/H
-A = np.array([
-    [1, 0, 0, dt, 0, 0],
-    [0, 1, 0, 0, dt, 0],
-    [0, 0, 1, 0, 0, dt],
-    [0, 0, 0, 1, 0, 0],
-    [0, 0, 0, 0, 1, 0],
-    [0, 0, 0, 0, 0, 1]])
-B = np.array([
-    [0.5*dt**2, 0, 0],
-    [0, 0.5*dt**2, 0],
-    [0, 0, 0.5*dt**2],
-    [dt, 0, 0],
-    [0, dt, 0],
-    [0, 0, dt]])
-Q = np.eye(6)
-R = np.eye(3)
-X = np.matrix(scipy.linalg.solve_continuous_are(A, B, Q, R))
-# compute the LQR gain
-K = np.matrix(scipy.linalg.inv(R) * (B.T * X))
 
 fair_planner_solver_errors = 0
 nbf_solver_errors = 0
@@ -129,53 +98,6 @@ for t in range(trials):
     if not os.path.exists(trial_dir):
         os.mkdir(trial_dir)
 
-    # RANDOMLY GENERATE AN OBSTACLE OR READ ONE FORM FILE
-    obstacles = {}
-    if notion == 2:
-        # num_obs = np.random.randint(5) + 2
-        # # num_obs = 0
-        # for i in range(num_obs):
-        #     obs_name = 'obs{}'.format(i)
-        #     # center_x = np.random.uniform(low=2, high=9.5)
-        #     # center_y = np.random.uniform(low=1, high=9.5)
-        #     # center_z = np.random.uniform(low=1, high=4.5)
-        #     if N == 5:
-        #         # center_x = np.random.uniform(low=2.5, high=7.5)
-        #         # center_y = np.random.uniform(low=2.5, high=7.5)
-        #         # center_z = np.random.uniform(low=2, high=4.5)
-        #         center_x = np.random.uniform(low=4, high=6)
-        #         center_y = np.random.uniform(low=4, high=6)
-        #         center_z = np.random.uniform(low=2, high=4)
-        #     else:
-        #         center_x = np.random.uniform(low=2.5, high=5)
-        #         center_y = np.random.uniform(low=2.5, high=5)
-        #         center_z = np.random.uniform(low=2, high=4.5)
-        #     obstacles[obs_name] = {'center': [center_x, center_y, center_z], 'radius': 0.5}
-        #     # save obstacles
-        #     with open('{}/obstacles.yaml'.format(trial_dir), 'w') as f:
-        #         yaml.dump(obstacles, f, default_flow_style=False)
-
-        num_obs = np.random.choice([1, 2, 3, 4, 5])
-        num_obs = 4
-        for i in range(num_obs):
-            obs_name = 'obs{}'.format(i)
-            # block somewhere in the middle
-            u = np.random.uniform(low=0.3, high=0.67)
-            new_p = (1 - u) * starts[i] + u * goals['g{}'.format(i+1)]['center']
-            center_x = new_p[0] + np.random.random() * 0.1
-            center_y = new_p[1] + np.random.random() * 0.1
-            center_z = new_p[2] - 0.5
-            obstacles[obs_name] = {'center': np.array([center_x, center_y, center_z]).tolist(), 'radius': 0.5}
-        with open('{}/obstacles.yaml'.format(trial_dir), 'w') as f:
-            # print(obstacles)
-            yaml.dump(obstacles, f, default_flow_style=False)
-    else:
-        # with open('test_results/exp1_dist_no_fair/trial{}/obstacles.yaml'.format(t), 'r') as f:
-        # with open('test_results/exp1_star_central_no_fair/trial{}/obstacles.yaml'.format(t), 'r') as f:
-        with open('test_results/trial{}/obstacles.yaml'.format(t), 'r') as f:
-            obstacles = yaml.safe_load(f)
-        num_obs = len(obstacles)
-
     fair_planner_error = False
     trial_error = False
     trial_error_after_relax = False
@@ -190,18 +112,32 @@ for t in range(trials):
     clf_reach = []
     runtimes_fair_planner = []
     runtimes_safe_planner = []
+    andreas_fairness_so_far = []
+    opt_fairness_so_far = []
     for i in range(N):
-        # Pick Start Area
-        start = starts[i]
-        init_pos.append(start)
+        # Pick Start Area and Generate Random Position Within Area
+        # start = np.random.choice(list(starts.keys()))
+        # start_pos = starts[start]['center']
+        # start_rad = starts[start]['radius']
+        # x = np.random.uniform(low=start_pos[0]-start_rad, high=start_pos[0]+start_rad, size=1)[0]
+        # y = np.random.uniform(low=start_pos[1]-start_rad, high=start_pos[1]+start_rad, size=1)[0]
+        # z = np.random.uniform(low=0, high=start_pos[2]+start_rad, size=1)[0]
+        while True:
+            x = np.random.uniform(low=-3, high=3, size=1)[0]
+            y = np.random.uniform(low=-3, high=3, size=1)[0]
+            z = np.random.uniform(low=0, high=3, size=1)[0]
+            if np.linalg.norm(np.array([x, y, z]) - obstacles['obs1']['center']) > obstacles['obs1']['radius']*1.5:
+                init_pos.append(np.array([x, y, z]))
+                break
         
         s = [init_pos[i]]
         s.append(np.array([0, 0, 0]))  # velo
         init_states.append(np.array(s).flatten())
 
         # Also Pick a Random goal
-        goal = goals['g{}'.format(i+1)]
-        drone_starts.append({'center': start, 'radius': 1})
+        assigned_goal = goal_assignments[i]
+        goal = goals['g{}'.format(assigned_goal)]
+        # drone_starts.append({'center': start, 'radius': start_rad})
         drone_goals.append(goal)
     orig_init_states = list(init_states)
     orig_init_pos = list(init_pos)
@@ -273,9 +209,15 @@ for t in range(trials):
 
         # GENERATE SOLO ENERGIES
         # use the above inputs from generate_init_traj_quad to get the solo energies IF IT'S THE FIRST PLANNED TRAJECTORY
+        # solo_energies = []
         if Hbar == H:
             for i in range(N):
-                solo_energies.append(np.linalg.norm(init_u[i])**2)
+                if len(final_us) > 0:
+                    unified_andreas_inputs = np.concatenate([np.array(final_us).transpose(1, 0, 2), init_u], axis=1)
+                else:
+                    unified_andreas_inputs = init_u
+                solo_energies.append(np.linalg.norm(unified_andreas_inputs[i])**2)
+                # solo_energies.append(np.linalg.norm(init_u[i])**2)
         
         # INIT SOLVER
         # n = N*Hbar*control_input_size
@@ -292,8 +234,33 @@ for t in range(trials):
             try:
                 curr_t = H - Hbar
                 seed_u, converge_iter, fairness_res = obj.solve_distributed(init_u, final_us, curr_t, steps=fair_dist_iter, dyn='quad')
+                print(converge_iter)
+                # print('Fairness of Andreas inputs at this time {}'.format(H - Hbar))
+                # print(np.round(obj.fairness(np.concatenate([np.array(final_us).flatten(), init_u.flatten()])), 3))
+                if len(final_us) > 0:
+                    unified_andreas_inputs = np.concatenate([np.array(final_us).transpose(1, 0, 2), init_u], axis=1)
+                else:
+                    unified_andreas_inputs = init_u
+                andreas_fair = np.round(obj.fairness(unified_andreas_inputs), 3)
+                andreas_fairness_so_far.append(andreas_fair)
+
+                # print('Fairness of Inputs at this time after optimization')
+                # print(np.linalg.norm(seed_u.flatten() - unified_andreas_inputs.flatten()))
+                opt_fair = np.round(obj.fairness(seed_u.flatten()), 3)
+                opt_fairness_so_far.append(opt_fair)
                 seed_u = np.array(seed_u).reshape((N, H, control_input_size))
                 seed_u = seed_u[:, curr_t:, :]
+
+                # Plotting how this iteration optimized for fairness
+                # plt.plot(fairness_res, label='Alg 1 iterations', color='blue')
+                # # plt.hlines(andreas_fair, xmin=0, xmax=len(fairness_res), label='Fairness at Input', color='red')
+                # # plt.hlines(opt_fair, xmin=0, xmax=len(fairness_res), label='Fairness at Output', color='green')
+                # # # print(local_alignments)
+                # # local_alignments = np.array(local_alignments).reshape((N, len(fairness_res)))
+                # # for la_num, la in enumerate(local_alignments):
+                # #     plt.plot(la, label='Alignments agent {}'.format(la_num))
+                # plt.legend()
+                # plt.show()
 
                 if curr_t == 0:
                     fair_us = np.array(seed_u)
@@ -316,13 +283,9 @@ for t in range(trials):
 
                 # use solo trajs as ref
                 seed_u = init_u
-                # if Hbar == H:
-                #     seed_u = init_u
-                # else:
-                #     seed_u = seed_u[:, 1:, ]
                 fair_planner_solver_errors += 1
                 fair_planner_error = True
-        runtimes_fair_planner.append(time.time() - fair_planner_time_start)
+            runtimes_fair_planner.append(time.time() - fair_planner_time_start)
         fair_planner_iter.append(converge_iter)
 
         # if t == 0 and ((Hbar - H) % 5 == 0):
@@ -357,7 +320,7 @@ for t in range(trials):
         safe_planner_time_start = time.time()
         obj = Objective(N, Hbar, system_model_config, init_states, init_pos, obstacles, drone_goals, drone_starts, Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
         obj.solo_energies = solo_energies
-        # final_u = seed_u
+        final_u = seed_u
         try:
             if dist_nbf:
                 test_uis, all_Js, cbfs, clfs = obj.solve_distributed_nbf(seed_u, last_delta,
@@ -427,7 +390,7 @@ for t in range(trials):
                 final_u = seed_u[:,0,:]
             else:
                 final_u = seed_u
-            trial_error = True
+                trial_error = True
 
         runtimes_safe_planner.append(time.time() - safe_planner_time_start)
         
@@ -475,17 +438,17 @@ for t in range(trials):
         #         goal_sphere.plot_3d(ax, alpha=0.2, color='green')
         #     plt.show()
 
-    if dist_nbf:
-        # print('plot J values of first iteration')
-        plt.plot(list(range(len(all_J_sequences[0]))), all_J_sequences[0])
-        plt.savefig('{}/dist_cost_init.png'.format(trial_dir))
-        plt.clf()
-        plt.close()
+    # if dist_nbf:
+    #     # print('plot J values of first iteration')
+    #     plt.plot(list(range(len(all_J_sequences[0]))), all_J_sequences[0])
+    #     plt.savefig('{}/dist_cost_init.png'.format(trial_dir))
+    #     plt.clf()
+    #     plt.close()
 
-        plt.plot(list(range(len(all_J_sequences[-1]))), all_J_sequences[-1])
-        plt.savefig('{}/dist_cost.png'.format(trial_dir))
-        plt.clf()
-        plt.close()
+    #     plt.plot(list(range(len(all_J_sequences[-1]))), all_J_sequences[-1])
+    #     plt.savefig('{}/dist_cost.png'.format(trial_dir))
+    #     plt.clf()
+    #     plt.close()
 
     n = N*H*control_input_size
     Q = np.random.randn(n, n)   # variable for quadratic objective
@@ -502,7 +465,7 @@ for t in range(trials):
     sol_fairness1 = np.round(obj.fairness(final_us.flatten()), 3)
     sol_fairness4 = np.round(obj.surge_fairness(final_us.flatten()), 3)
 
-    fair_planner_avg_runtime = np.round(np.mean(runtimes_fair_planner), 3)
+    fair_planner_avg_runtime = np.round(np.mean(runtimes_fair_planner), 3) if notion != 2 else 0
     safe_planner_avg_runtime = np.round(np.mean(runtimes_safe_planner), 3)
     goals_made = obj.goals_made
     if goals_made < N:
@@ -533,7 +496,7 @@ for t in range(trials):
         print('Error in Safety Planner after relaxtion')
         trial_result += 50
 
-    trial_res = [t, trial_result, sol_energy, sol_fairness1, sol_fairness4, np.mean(fair_planner_iter), fair_planner_avg_runtime, safe_planner_avg_runtime, relax_num, goals_made, max_missed_distance, num_obs]
+    trial_res = [t, trial_result, sol_energy, sol_fairness1, sol_fairness4, np.mean(fair_planner_iter), fair_planner_avg_runtime, safe_planner_avg_runtime, relax_num, goals_made, max_missed_distance]
     with open('{}/trial_results.csv'.format(exp_dir), 'a') as file_obj:
         writer_obj = writer(file_obj)
         writer_obj.writerow(trial_res)
@@ -558,16 +521,16 @@ for t in range(trials):
         cg = g['center']
         rg = g['radius']
         goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
-        goal_sphere.plot_3d(ax, alpha=0.1, color='green')
+        goal_sphere.plot_3d(ax, alpha=0.5, color='green')
     # for sId, s in starts.items():
     #     cs = s['center']
     #     rs = s['radius']
     #     start_sphere = Sphere([cs[0], cs[1], cs[2]], rs)
     #     start_sphere.plot_3d(ax, alpha=0.2, color='blue')
-    # plt.savefig('{}/final_traj.png'.format(trial_dir))
-    # plt.clf()
-    # plt.close()
-    plt.show()
+    plt.savefig('{}/final_traj.png'.format(trial_dir))
+    plt.clf()
+    plt.close()
+    # plt.show()
     # print('PRINTING FINAL INPUTS')
     # print(np.round(final_us, 2))
 
@@ -599,29 +562,33 @@ for t in range(trials):
     final_vels_result = np.concatenate([drone_results, final_vels], axis=1)
     np.savetxt('{}/final_vels.csv'.format(trial_dir), final_vels_result, fmt='%f')
 
-    if not dist_nbf:
-        save_cbf_clf_vals = np.round(np.array([cbf_values, clf_values]), 3)
-        np.savetxt('{}/cbf_clf_values.csv'.format(trial_dir), save_cbf_clf_vals.T, fmt='%f')
+    # if not dist_nbf:
+    #     save_cbf_clf_vals = np.round(np.array([cbf_values, clf_values]), 3)
+    #     np.savetxt('{}/cbf_clf_values.csv'.format(trial_dir), save_cbf_clf_vals.T, fmt='%f')
 
-        # if N == 3:
-        np.savetxt('{}/ind_cbf_obstacles.csv'.format(trial_dir), np.array(cbf_obstacles), fmt='%f')
-        np.savetxt('{}/ind_cbf_separation.csv'.format(trial_dir), np.array(cbf_separation), fmt='%f')
-        np.savetxt('{}/ind_clf_reach.csv'.format(trial_dir), np.array(clf_reach), fmt='%f')
+    #     # if N == 3:
+    #     np.savetxt('{}/ind_cbf_obstacles.csv'.format(trial_dir), np.array(cbf_obstacles), fmt='%f')
+    #     np.savetxt('{}/ind_cbf_separation.csv'.format(trial_dir), np.array(cbf_separation), fmt='%f')
+    #     np.savetxt('{}/ind_clf_reach.csv'.format(trial_dir), np.array(clf_reach), fmt='%f')
             
-            # plt.plot(list(range(len(cbf_obstacles))), cbf_obstacles)
-            # plt.savefig('{}/ind_cbf_obstacles.png'.format(trial_dir))
-            # plt.clf()
+    #         # plt.plot(list(range(len(cbf_obstacles))), cbf_obstacles)
+    #         # plt.savefig('{}/ind_cbf_obstacles.png'.format(trial_dir))
+    #         # plt.clf()
 
-            # plt.plot(list(range(len(cbf_separation))), cbf_separation)
-            # plt.savefig('{}/ind_cbf_separation.png'.format(trial_dir))
-            # plt.clf()
+    #         # plt.plot(list(range(len(cbf_separation))), cbf_separation)
+    #         # plt.savefig('{}/ind_cbf_separation.png'.format(trial_dir))
+    #         # plt.clf()
 
-            # plt.plot(list(range(len(clf_reach))), clf_reach)
-            # plt.savefig('{}/ind_cld_reach.png'.format(trial_dir))
-            # plt.clf()
-    else:
-        save_cbf_clf_vals = np.round(np.array([np.min(cbf_values, axis=1), np.max(clf_values, axis=1)]), 3)
-        np.savetxt('{}/cbf_clf_values.csv'.format(trial_dir), save_cbf_clf_vals.T, fmt='%f')
+    #         # plt.plot(list(range(len(clf_reach))), clf_reach)
+    #         # plt.savefig('{}/ind_cld_reach.png'.format(trial_dir))
+    #         # plt.clf()
+    # else:
+    #     save_cbf_clf_vals = np.round(np.array([np.min(cbf_values, axis=1), np.max(clf_values, axis=1)]), 3)
+    #     np.savetxt('{}/cbf_clf_values.csv'.format(trial_dir), save_cbf_clf_vals.T, fmt='%f')
+
+    # Save Fairness Tracking
+    comb_fairness = np.array([andreas_fairness_so_far, opt_fairness_so_far])
+    np.savetxt('{}/fairness_tracking.csv'.format(trial_dir), comb_fairness.T, fmt='%f')
 
 print('Successful Trials {}'.format(successful_trials))
 print('Hit Obstacle {}'.format(collide_with_obstacle))

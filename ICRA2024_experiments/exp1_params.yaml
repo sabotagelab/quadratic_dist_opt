@@ -1,0 +1,42 @@
+5:
+  Tf: 1
+  H: 25
+  sd: 0.01
+  Ubox: 100
+  fair_planner:
+    alpha: 0.000000001
+    distributed:
+      kappa: 0.1
+      eps_bounds: 5
+      iter: 1000
+  safe_planner:
+    central:
+      h_gamma: 18
+      V_alpha: .2
+    distributed:
+      hi: .1
+      ho: .1
+      hv: .1
+      step_size: 0.001
+      trade_param: 0.1
+10:
+  Tf: 1
+  H: 25
+  sd: 0.01  
+  Ubox: 200
+  fair_planner:
+    alpha: 0.000000001
+    distributed:
+      kappa: 20 #100
+      eps_bounds: 50
+      iter: 1000
+  safe_planner:
+    central:
+      h_gamma: 2000 #1500
+      V_alpha: 0.01
+    distributed:
+      hi: 0.05
+      ho: 0.1
+      hv: 1
+      step_size: 0.002
+      trade_param: 0.10

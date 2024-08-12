@@ -100,28 +100,37 @@ class Objective():
         prev_eps = init_eps
 
         fairness = []
+        # alignment_values = []
+        min_fair_val = self._fairness_central(u)
+        min_fair_sol = u
         gamma = np.linspace(1, 0.1, steps)
         timeout = 30
         start_time = time.time()
         for s in range(steps):
             try:
-                new_eps = self.solve_local(u.flatten(), curr_t, prev_eps, dyn=dyn)
+                new_eps = self.solve_local(u.flatten(), curr_t, prev_eps, dyn=dyn, pick=(s % self.N))
                 if len(new_eps) == 0:
                     new_eps = prev_eps
+                # alignment_values.append(local_alignments)
             except Exception as e:
                 print(e)
                 print('Distributed Method Error at Iteration {}'.format(s))
                 new_eps = prev_eps
+                # alignment_values.append(np.zeros(self.N))
             prev_u = np.copy(u)
             for i in range(self.N):
                 u[i] += gamma[s] * new_eps[i].reshape((self.H, control_input_size))
                 
             fairness.append(self._fairness_central(u))
+            # STORE BEST SOLUTION
+            if min(fairness) < min_fair_val:
+                min_fair_val = min(fairness)
+                min_fair_sol = u
             prev_eps = new_eps
 
             # Check if inputs converged
             diff = np.linalg.norm(u - prev_u)
-            thresh = 0.2
+            thresh = 0.1 if curr_t > 0 else 0.01
             if diff < thresh:
                 break
             if curr_t > 0:
@@ -129,9 +138,11 @@ class Objective():
                     break
             if new_eps == 0:
                 break
-        return u, s
+        u = min_fair_sol  # return best solution
+        return u, s, fairness #, alignment_values
 
-    def solve_local(self, u, curr_t, prev_eps, dyn='simple'):
+    def solve_local(self, u, curr_t, prev_eps, dyn='simple', pick=0):
+        # print('Picking {}'.format(pick))
         control_input_size = self.control_input_size
         F = self.N * self.H * control_input_size
         
@@ -145,7 +156,12 @@ class Objective():
             grad_fairness = self.fairness(u, grad=True)
 
         solved_values = []
+        # solved_grad_alignment = []
         for i in range(self.N):
+            if i != pick:
+                solved_values.append(np.zeros_like(prev_eps[i]))
+                # solved_grad_alignment.append(0)
+                continue
             if self.notion in [0, 3]:  ## the basic fairness notion, uTQu + f1 (or uTQu + surge fairness)
                 fairness_value = self.alpha * grad_quad[i] + grad_fairness[i]
             elif self.notion == 1:  # no fairness, uTQu only
@@ -178,6 +194,7 @@ class Objective():
                 stack = cp.hstack([eps_zeros_before, eps])
 
             # define local constraints
+            # constraints = []
             constraints = [
                 u_param + stack <= self.Ubox, \
                 -self.Ubox <= u_param + stack,
@@ -205,27 +222,30 @@ class Objective():
             constraints.append(cp.norm(final_pos - target_center) <= target_radius)
 
             # define local objective
-            objective = cp.Minimize(-1 * (eps.T @ grad_param) + \
-                self.kappa * cp.norm(eps)**2 )
+            objective = cp.Minimize(-1 * (eps.T @ grad_param) + self.kappa * cp.norm(eps)**2 )
 
             prob = cp.Problem(objective, constraints)
             prob.solve(verbose=False, solver=CP_SOLVER)
             try:
                 prob.solve(verbose=False, solver=CP_SOLVER)
-                if prob.status == 'infeasible':
+                # if prob.status != 'optimal':
+                #     print(prob.status)
+                if prob.status in ['infeasible', 'infeasible_inaccurate']:
                     # prob.solve(verbose=True, solver=CP_SOLVER)
                     # print('Agent {} Local Solution Infeasible'.format(i))
                     # If a single agent's local solution is infeasible don't use any solution from this iteration
                     solved_values.append(np.zeros_like(prev_eps[i]))
+                    # solved_grad_alignment.append(0)
                 else:
                     solved_values.append(eps.value)
+                    # solved_grad_alignment.append(-1 * (eps.value.T @ grad))
             except Exception as e:
                 # Try to catch solver error. If an agent runs into solver error, don't modify input
                 print(e)
                 print('Agent {} Solver Error'.format(i))
                 solved_values.append(np.zeros_like(prev_eps[i]))
         
-        return solved_values
+        return solved_values #, solved_grad_alignment
             
     ##########################################################
     # Reach Constraint
