@@ -156,7 +156,7 @@ for t in range(trials):
         #         yaml.dump(obstacles, f, default_flow_style=False)
 
         num_obs = np.random.choice([1, 2, 3, 4, 5])
-        num_obs = 4
+        # num_obs = 4
         for i in range(num_obs):
             obs_name = 'obs{}'.format(i)
             # block somewhere in the middle
