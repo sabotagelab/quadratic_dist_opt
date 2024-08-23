@@ -78,9 +78,16 @@ elif N == 10:
     goal_assignments = [1, 1, 1, 1, 1, 2, 2, 2, 2, 2]
 elif N == 12:
     goal_assignments = [1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3]
-else:
+elif N == 15:
     goal_assignments = [1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3]
-
+elif N == 20:
+    goal_assignments = [1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4]
+else:
+    goal_assignments = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                        2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+                        3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+                        4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+                        5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
 dt = Tf/H
 
 fair_planner_solver_errors = 0

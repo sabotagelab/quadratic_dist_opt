@@ -196,3 +196,119 @@
     a2:
       center: [2.25, 2.25, 2.25]
       radius: 0.75
+20:
+  Tf: 1
+  H: 25
+  sd: 0.01
+  Ubox: 100
+  fair_planner:
+    alpha: 0.000000001
+    distributed:
+      kappa: 1
+      eps_bounds: 10
+      iter: 1000
+  safe_planner:
+    central:
+      h_gamma: 50
+      V_alpha: 1.5
+    distributed:
+      hi: .1
+      ho: .1
+      hv: .1
+      step_size: 0.00005
+      trade_param: 0.1
+  obstacles:
+    obs1:
+      center: [0, 0, 0.3] # [0, 0, .75]
+      radius: 0.45 #1
+  goals:
+    g1:
+      center: [-0.2250, -0.2250, 1.850]
+      radius: 0.25
+    g2:
+      center: [.2875, 2.8875, 0.4625]
+      radius: 0.25
+    g3:
+      center: [-2.8875, 2.8875, 0.1125]
+      radius: 0.25
+    g4:
+      center: [2.8875, -2.8875, 0.1125]
+      radius: 0.25
+  starts:
+    a1:
+      center: [-2.25, -2.25, -2.25]
+      radius: 0.75
+    a2:
+      center: [2.25, 2.25, 2.25]
+      radius: 0.75
+50:
+  Tf: 1
+  H: 25
+  sd: 0.001
+  Ubox: 100
+  fair_planner:
+    alpha: 0.000000001
+    distributed:
+      kappa: 1
+      eps_bounds: 10
+      iter: 1000
+  safe_planner:
+    central:
+      h_gamma: 50
+      V_alpha: 1.5
+    distributed:
+      hi: .1
+      ho: .1
+      hv: .1
+      step_size: 0.00005
+      # step_size: 0.00001
+      # step_size: 0.000001
+      trade_param: 0.1
+  obstacles:
+    obs1:
+      center: [0, 0, 0.3] # [0, 0, .75]
+      radius: 0.25 #0.35 #0.45 #1
+  goals:
+    # g1:
+    #   center: [-2, 0, 2]
+    #   radius: 0.5
+    # g2:
+    #   center: [4.3, -1.7, 1.3]
+    #   radius: 0.5
+    # g3:
+    #   center: [-4.5, -4.5, 1.5]
+    #   radius: 0.5
+    # g4:
+    #   center: [2.15, 2.15, 5]
+    #   radius: 0.5
+    # g5:
+    #   center: [0, 3.4, 0.75]
+    #   radius: 0.5
+    g1:
+      center: [-0.2250, -0.2250, 1.850]
+      radius: 0.5
+    g2:
+      center: [.2875, 2.8875, 0.4625]
+      radius: 0.5
+    g3:
+      center: [-2.8875, 2.8875, 0.1125]
+      radius: 0.5
+    g4:
+      center: [2.8875, -2.8875, 0.1125]
+      radius: 0.5
+    g5:
+      center: [-4.5, -4.5, 1.5]
+      radius: 0.5
+  starts:
+    # a1:
+    #   center: [-3.25, -3.25, -3.25]
+    #   radius: 2.75
+    # a2:
+    #   center: [3.25, 3.25, 3.25]
+    #   radius: 2.75
+    a1:
+      center: [-2.25, -2.25, -2.25]
+      radius: 0.75
+    a2:
+      center: [2.25, 2.25, 2.25]
+      radius: 0.75

@@ -7,13 +7,16 @@ from generate_trajectories import generate_agent_states
 import warnings
 
 EPS = 1e-8
-CP_SOLVER='ECOS' # 'MOSEK' #
-# CP_SOLVER='MOSEK' #
+CP_SOLVER='ECOS'
+# CP_SOLVER='MOSEK'
 SCIPY_SOLVER='L-BFGS-B' # 'SLSQP' 
 
 class Objective():
     def __init__(self, N, H, system_model_config, init_states, init_pos, obstacles, targets, \
         starts, Q, alpha, kappa, eps_bounds, Ubox, dt=0.1, notion=0, safe_dist=0.1):
+        if N > 20:
+            global CP_SOLVER
+            CP_SOLVER = 'MOSEK'
         self.N = N
         self.H = H
         self.system_model = system_model_config[0]
@@ -129,9 +132,10 @@ class Objective():
             prev_eps = new_eps
 
             # Check if inputs converged
-            diff = np.linalg.norm(u - prev_u)
+            diff = np.linalg.norm(u - prev_u) 
             thresh = 0.1 if curr_t > 0 else 0.01
-            if diff < thresh:
+            thesh_mult = 0.1 if self.N > 20 else 1
+            if diff < (thresh * thesh_mult):
                 break
             if curr_t > 0:
                 if (time.time() - start_time) >= timeout:
