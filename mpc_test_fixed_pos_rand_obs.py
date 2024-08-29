@@ -16,7 +16,7 @@ from generate_trajectories import generate_init_traj_quad, generate_inputs_lqr, 
 
 
 EPS = 1e-2
-np.random.seed(42)
+np.random.seed(41)
 
 parser = argparse.ArgumentParser(description='Optimization')
 # MAIN VARIABLES
@@ -93,7 +93,9 @@ else:
     starts = [np.array([0.955, 7.939, 0]), np.array([0.955, 2.061, 0]), np.array([6.545, 0.245, 0]), np.array([10, 5, 0]), np.array([6.545, 9.755, 0]), # STAR
               np.array([4.5, 5, 0]), np.array([4.7, 5, 0]), np.array([4.9, 5, 0]), np.array([5.1, 5, 0]), np.array([5.3, 5, 0])]
 
-dt = Tf/H
+dt = 0.2 #Tf/H
+Tf = H * dt
+
 A = np.array([
     [1, 0, 0, dt, 0, 0],
     [0, 1, 0, 0, dt, 0],
@@ -275,7 +277,11 @@ for t in range(trials):
         # use the above inputs from generate_init_traj_quad to get the solo energies IF IT'S THE FIRST PLANNED TRAJECTORY
         if Hbar == H:
             for i in range(N):
-                solo_energies.append(np.linalg.norm(init_u[i])**2)
+                if len(final_us) > 0:
+                    unified_andreas_inputs = np.concatenate([np.array(final_us).transpose(1, 0, 2), init_u], axis=1)
+                else:
+                    unified_andreas_inputs = init_u
+                solo_energies.append(np.linalg.norm(unified_andreas_inputs[i])**2)
         
         # INIT SOLVER
         # n = N*Hbar*control_input_size
@@ -316,13 +322,10 @@ for t in range(trials):
 
                 # use solo trajs as ref
                 seed_u = init_u
-                # if Hbar == H:
-                #     seed_u = init_u
-                # else:
-                #     seed_u = seed_u[:, 1:, ]
                 fair_planner_solver_errors += 1
                 fair_planner_error = True
-        runtimes_fair_planner.append(time.time() - fair_planner_time_start)
+        # runtimes_fair_planner.append(time.time() - fair_planner_time_start)
+        runtimes_fair_planner.append((time.time() - fair_planner_time_start) / N)
         fair_planner_iter.append(converge_iter)
 
         # if t == 0 and ((Hbar - H) % 5 == 0):
@@ -429,7 +432,10 @@ for t in range(trials):
                 final_u = seed_u
             trial_error = True
 
-        runtimes_safe_planner.append(time.time() - safe_planner_time_start)
+        if dist_nbf:
+            runtimes_safe_planner.append((time.time() - safe_planner_time_start) / N)
+        else:
+            runtimes_safe_planner.append(time.time() - safe_planner_time_start)
         
         Tbar = Tf - (H-Hbar)*Tf/H
 
@@ -472,7 +478,7 @@ for t in range(trials):
         #         cg = g['center']
         #         rg = g['radius']
         #         goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
-        #         goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+        #         goal_sphere.plot_3d(ax, alpha=0.1, color='green')
         #     plt.show()
 
     if dist_nbf:
@@ -564,10 +570,10 @@ for t in range(trials):
     #     rs = s['radius']
     #     start_sphere = Sphere([cs[0], cs[1], cs[2]], rs)
     #     start_sphere.plot_3d(ax, alpha=0.2, color='blue')
-    # plt.savefig('{}/final_traj.png'.format(trial_dir))
-    # plt.clf()
-    # plt.close()
-    plt.show()
+    plt.savefig('{}/final_traj.png'.format(trial_dir))
+    plt.clf()
+    plt.close()
+    # plt.show()
     # print('PRINTING FINAL INPUTS')
     # print(np.round(final_us, 2))
 

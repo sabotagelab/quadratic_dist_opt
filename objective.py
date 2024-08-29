@@ -134,8 +134,9 @@ class Objective():
             # Check if inputs converged
             diff = np.linalg.norm(u - prev_u) 
             thresh = 0.1 if curr_t > 0 else 0.01
-            thesh_mult = 0.1 if self.N > 20 else 1
-            if diff < (thresh * thesh_mult):
+            # thresh_mult = 0.1 if self.N > 20 else 1
+            thresh_mult = 0.1 if self.N > 20 else 1
+            if diff < (thresh * thresh_mult):
                 break
             if curr_t > 0:
                 if (time.time() - start_time) >= timeout:

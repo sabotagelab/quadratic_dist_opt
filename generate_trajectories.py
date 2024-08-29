@@ -7,7 +7,8 @@ QUAD_INPUT_LIMITS = {
     'fmax': 25, #[m/s**2]
     'wmax': 20, #[rad/s]
     # 'minTimeSec': 0.02 #[s]
-    'minTimeSec': 0.04 #[s]
+    # 'minTimeSec': 0.04 #[s]
+    'minTimeSec': 0.2
 }
 
 

@@ -11,8 +11,8 @@
       iter: 1000
   safe_planner:
     central:
-      h_gamma: 18
-      V_alpha: .2
+      h_gamma: 1.5 #18
+      V_alpha: .175 #.2
     distributed:
       hi: .1
       ho: .1
