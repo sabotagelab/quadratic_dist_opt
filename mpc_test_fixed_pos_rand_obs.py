@@ -16,7 +16,7 @@ from generate_trajectories import generate_init_traj_quad, generate_inputs_lqr, 
 
 
 EPS = 1e-2
-np.random.seed(41)
+np.random.seed(42)
 
 parser = argparse.ArgumentParser(description='Optimization')
 # MAIN VARIABLES
@@ -158,7 +158,7 @@ for t in range(trials):
         #         yaml.dump(obstacles, f, default_flow_style=False)
 
         num_obs = np.random.choice([1, 2, 3, 4, 5])
-        # num_obs = 4
+        # num_obs = 1
         for i in range(num_obs):
             obs_name = 'obs{}'.format(i)
             # block somewhere in the middle
@@ -324,8 +324,7 @@ for t in range(trials):
                 seed_u = init_u
                 fair_planner_solver_errors += 1
                 fair_planner_error = True
-        # runtimes_fair_planner.append(time.time() - fair_planner_time_start)
-        runtimes_fair_planner.append((time.time() - fair_planner_time_start) / N)
+        runtimes_fair_planner.append(time.time() - fair_planner_time_start)
         fair_planner_iter.append(converge_iter)
 
         # if t == 0 and ((Hbar - H) % 5 == 0):
@@ -432,10 +431,7 @@ for t in range(trials):
                 final_u = seed_u
             trial_error = True
 
-        if dist_nbf:
-            runtimes_safe_planner.append((time.time() - safe_planner_time_start) / N)
-        else:
-            runtimes_safe_planner.append(time.time() - safe_planner_time_start)
+        runtimes_safe_planner.append(time.time() - safe_planner_time_start)
         
         Tbar = Tf - (H-Hbar)*Tf/H
 

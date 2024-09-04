@@ -5,7 +5,7 @@
 #SBATCH -p athena								  # name of partition or queue
 #SBATCH -o fairfly.out				  # name of output file for this submission script
 #SBATCH -e fairfly.err				  # name of error file for this submission script
-#SBATCH -c 16
+#SBATCH -c 24
 #SBATCH --mem=50G
 
 source /nfs/stak/users/frondan/.bashrc

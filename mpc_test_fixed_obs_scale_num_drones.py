@@ -16,7 +16,7 @@ from generate_trajectories import generate_init_traj_quad, generate_inputs_lqr, 
 
 
 EPS = 1e-2
-np.random.seed(42)
+np.random.seed(41)
 
 parser = argparse.ArgumentParser(description='Optimization')
 # MAIN VARIABLES
@@ -190,8 +190,10 @@ for t in range(trials):
             init_u.append(traj_accel)
             init_traj.append(traj_pos)
         init_u = np.array(init_u)
+        # print('Init Traj for drone 0')
+        # print(init_traj[0])
         # print('ANDREAS INPUTS')
-        # print(init_u)
+        # print(init_u[0])
 
         # if t == 0 and Hbar == H:
         #     print('Figure For Singular Trajectories')
@@ -228,7 +230,7 @@ for t in range(trials):
                 # solo_energies.append(np.linalg.norm(init_u[i])**2)
         
         # INIT SOLVER
-        # n = N*Hbar*control_input_size
+        # print('Fair Solver!')
         n = N*H*control_input_size
         Q = np.random.randn(n, n)   # variable for quadratic objective
         Q = Q.T @ Q  
@@ -241,7 +243,7 @@ for t in range(trials):
             # print('Running Fair Planner at time {}'.format(H-Hbar))
             try:
                 curr_t = H - Hbar
-                seed_u, converge_iter, fairness_res = obj.solve_distributed(init_u, final_us, curr_t, steps=fair_dist_iter, dyn='quad')
+                seed_u, converge_iter, fairness_res = obj.solve_distributed(init_u, final_us, curr_t, steps=fair_dist_iter, dyn='quad', orig_init_states=orig_init_states)
                 print(converge_iter)
                 # print('Fairness of Andreas inputs at this time {}'.format(H - Hbar))
                 # print(np.round(obj.fairness(np.concatenate([np.array(final_us).flatten(), init_u.flatten()])), 3))
@@ -293,8 +295,7 @@ for t in range(trials):
                 seed_u = init_u
                 fair_planner_solver_errors += 1
                 fair_planner_error = True
-        # runtimes_fair_planner.append(time.time() - fair_planner_time_start)
-        runtimes_fair_planner.append((time.time() - fair_planner_time_start) / N)
+        runtimes_fair_planner.append(time.time() - fair_planner_time_start)
         fair_planner_iter.append(converge_iter)
 
         # if t == 0 and ((Hbar - H) % 5 == 0):

@@ -3,6 +3,10 @@ import numpy as np
 from scipy.optimize import Bounds, basinhopping, minimize, NonlinearConstraint
 import time
 from generate_trajectories import generate_agent_states
+from jaxopt import CvxpyQP, OSQP, BoxOSQP
+from jaxopt import ProjectedGradient
+from jaxopt.projection import projection_polyhedron
+import jax.numpy as jnp
 
 import warnings
 
@@ -84,12 +88,26 @@ class Objective():
                     g_diag_list.append(np.zeros_like(g))
             g_diag.append(g_diag_list)
         self.g_diag = np.block(g_diag)
+        Cbar = []
+        for i in range(0, self.H):
+            Cbar.append(np.linalg.matrix_power(f, i) @ g)
+            # C = []
+            # for j in range(0, self.H):
+            #     if j < self.H - i:
+            #         C.append(np.linalg.matrix_power(f, j) @ g)
+            #     else:
+            #         C.append(np.zeros((6, 3)))
+            # Cbar.append(C)
+        self.C = np.block(Cbar)
+        a = np.eye(self.H * 3)  # for box constraints, Ubox
+        b = np.eye(self.H * 3)  # for box constraints, ebox
+        self.A = np.concatenate([np.block(Cbar), a, b], axis=0)
 
     ##########################################################
     # Distributed Formulation
     ###########################################################
 
-    def solve_distributed(self, init_u, prefix_u, curr_t, steps=10, dyn='simple'):
+    def solve_distributed(self, init_u, prefix_u, curr_t, steps=10, dyn='simple', orig_init_states=None):
         if curr_t > 0:
             prefix_u = np.array(prefix_u).transpose(1, 0, 2)
             u = np.hstack((prefix_u, init_u))
@@ -103,7 +121,6 @@ class Objective():
         prev_eps = init_eps
 
         fairness = []
-        # alignment_values = []
         min_fair_val = self._fairness_central(u)
         min_fair_sol = u
         gamma = np.linspace(1, 0.1, steps)
@@ -112,18 +129,17 @@ class Objective():
         for s in range(steps):
             try:
                 new_eps = self.solve_local(u.flatten(), curr_t, prev_eps, dyn=dyn, pick=(s % self.N))
+                # new_eps = self.solve_local_jax(u, curr_t, prev_eps, orig_init_states, pick=(s % self.N))
                 if len(new_eps) == 0:
                     new_eps = prev_eps
-                # alignment_values.append(local_alignments)
             except Exception as e:
                 print(e)
                 print('Distributed Method Error at Iteration {}'.format(s))
                 new_eps = prev_eps
-                # alignment_values.append(np.zeros(self.N))
             prev_u = np.copy(u)
             for i in range(self.N):
                 u[i] += gamma[s] * new_eps[i].reshape((self.H, control_input_size))
-                
+            
             fairness.append(self._fairness_central(u))
             # STORE BEST SOLUTION
             if min(fairness) < min_fair_val:
@@ -133,8 +149,8 @@ class Objective():
 
             # Check if inputs converged
             diff = np.linalg.norm(u - prev_u) 
-            thresh = 0.1 if curr_t > 0 else 0.01
-            # thresh_mult = 0.1 if self.N > 20 else 1
+            # thresh = 0.1 if curr_t > 0 else 0.01
+            thresh = 0.5 if curr_t > 0 else 0.2
             thresh_mult = 0.1 if self.N > 20 else 1
             if diff < (thresh * thresh_mult):
                 break
@@ -143,6 +159,9 @@ class Objective():
                     break
             if new_eps == 0:
                 break
+        
+        # TEST
+        # self.solve_local_jax(u, curr_t, prev_eps, orig_init_states, pick=(s % self.N))
         u = min_fair_sol  # return best solution
         return u, s, fairness #, alignment_values
 
@@ -177,6 +196,7 @@ class Objective():
                 fairness_value = np.ones(self.H*control_input_size) * grad_fairness[i]
 
             grad = fairness_value
+            # print(grad.shape)
             grad_param = cp.Parameter(self.H * control_input_size, value=grad)
 
             curr_agent_u = u.reshape((self.N, self.H, control_input_size))[i].flatten()
@@ -251,6 +271,115 @@ class Objective():
                 solved_values.append(np.zeros_like(prev_eps[i]))
         
         return solved_values #, solved_grad_alignment
+    
+    def solve_local_jax(self, u, curr_t, prev_eps, orig_init_states, pick=0):
+        # print('Solve Local Jax', curr_t)
+        control_input_size = self.control_input_size
+
+        # Get the partial derivatives
+        grad_quad = self.quad(u.flatten(), grad=True).reshape(self.N, control_input_size * self.H)
+        if self.notion in [3, 5]:
+            grad_fairness = self.surge_fairness(u.flatten(), grad=True)
+        else:
+            grad_fairness = self.fairness(u.flatten(), grad=True)
+
+        solved_values = []
+        for i in range(self.N):
+            if i != pick:
+                solved_values.append(np.zeros_like(prev_eps[i]))
+                continue
+            if self.notion in [0, 3]:  ## the basic fairness notion, uTQu + f1 (or uTQu + surge fairness)
+                fairness_value = self.alpha * grad_quad[i] + grad_fairness[i]
+            elif self.notion == 1:  # no fairness, uTQu only
+                fairness_value = self.alpha * grad_quad[i]
+            elif self.notion == 2:  # no fairness, no uTQu term
+                fairness_value = np.zeros(self.H*control_input_size)
+            else:  # f1 or f2 only  (ie self.notion in [4, 5])
+                fairness_value = np.ones(self.H*control_input_size) * grad_fairness[i]
+
+            grad = fairness_value.reshape(self.H, control_input_size)
+            grad = np.flip(grad, axis=0).flatten()
+            curr_agent_u = u[i,:,:]
+            curr_agent_u = np.flip(curr_agent_u, axis=0)
+            # Compute Waypoints according to current u
+            init_state = np.linalg.matrix_power(self.f, self.H) @ orig_init_states[i]
+            S = self.C @ curr_agent_u.flatten() + init_state
+            
+            # Box Constraints
+            ## Goal Position 
+            target_center = np.array(self.targets[i]['center'])
+            target_radius = self.targets[i]['radius'] / 2.
+            pos_final = S[0:3]
+            pos_final_err_lb = target_center - (target_radius) - pos_final
+            state_final_err_lb = np.concatenate([pos_final_err_lb, -np.inf * np.ones(3)])
+            lower_bound = state_final_err_lb
+            pos_final_err_ub = target_center + (target_radius) - pos_final
+            state_final_err_ub = np.concatenate([pos_final_err_ub, np.inf * np.ones(3)])
+            upper_bound = state_final_err_ub
+
+            ## Ebox Constraints
+            for j in range(self.H, 0, -1):
+                if j < curr_t:
+                    lower_bound = np.append(lower_bound, np.zeros(3))
+                    upper_bound = np.append(upper_bound, np.zeros(3))
+                else:
+                    lower_bound = np.append(lower_bound, -1 * self.eps_bounds * np.ones(3))
+                    upper_bound = np.append(upper_bound, self.eps_bounds * np.ones(3))
+
+            ## Ubox Constraints
+            lower_bound = np.append(lower_bound, -self.Ubox * np.ones(self.H*3) - curr_agent_u.flatten())
+            upper_bound = np.append(upper_bound, self.Ubox * np.ones(self.H*3) - curr_agent_u.flatten())
+
+            # Solve problem
+            # Using CVXPY
+            # eps = cp.Variable(self.H * control_input_size)
+            # constraints = [
+            #     lower_bound <= self.A @ eps,
+            #     self.A @ eps <= upper_bound]
+            # objective = cp.Minimize(-1 * (eps.T @ grad) + self.kappa * cp.norm(eps)**2 )
+            # prob = cp.Problem(objective, constraints)
+            # prob.solve(verbose=False, solver=CP_SOLVER)
+            # eps = np.array(eps.value).reshape(self.H, control_input_size)
+            # print('redo cvxpy')
+            # print(prob.status)
+            # print(eps)
+            # Using Quadratic Program Solver
+            # Q = jnp.array(np.eye(self.H*3))
+            Q = jnp.array(2 * self.kappa * np.eye(self.H*3))
+            # c = jnp.array(np.ones(self.H*3))
+            # Q = jnp.array(grad)
+            # c = jnp.array(prev_eps)
+            c = jnp.array(-1 * grad)
+            A = jnp.array(self.A)
+            l = jnp.array(lower_bound)
+            u = jnp.array(upper_bound)
+            # qp = BoxOSQP(fun=self.solve_local_jax_fun)
+            qp = BoxOSQP()
+            init_params = qp.init_params(init_x=jnp.array(prev_eps[i]), params_obj=(Q, c), params_eq=A, params_ineq=(l, u))
+            params, res = qp.run(init_params=init_params, params_obj=(Q, c), params_eq=A, params_ineq=(l, u))
+            
+            # Using Projected Gradient        
+            # A = jnp.array(np.zeros((self.H*3, self.H*3), dtype=np.float32))
+            # b = jnp.array(np.zeros(self.H*3, dtype=np.float32))
+            # G = jnp.array(np.concatenate([self.A, -1 * self.A], axis=0))
+            # h = jnp.array(np.array([upper_bound, -1 * lower_bound]).flatten())
+            # print('building solver')
+            # qp = ProjectedGradient(fun=self.solve_local_jax_fun, projection=projection_polyhedron)
+            # print('solving')
+            # params, res = qp.run(jnp.array(prev_eps[i]), params_obj=(Q,c), hyperparams_proj=(A, b, G, h))
+            # print('solve status')
+            # print(res.status)
+            # # print(params.primal[0])
+            eps = np.array(params.primal[0]).reshape(self.H, control_input_size)
+            eps = np.flip(eps, axis=0).flatten()
+            solved_values.append(eps)
+        return solved_values
+
+    def solve_local_jax_fun(self, x, params_obj):
+        Q, c = params_obj
+        grad = Q
+        res = -1 * jnp.dot(x.T, grad) + self.kappa * jnp.linalg.norm(x)**2
+        return res
             
     ##########################################################
     # Reach Constraint
@@ -321,8 +450,9 @@ class Objective():
         mean_energy = np.mean(agent_norm_energies)
         partials = []
         for i in range(self.N):
-            grad = 2 * (1/self.N) * (agent_norm_energies[i] - mean_energy)
-            partials.append(grad)
+            grad = 2 * (1/self.N) * (agent_norm_energies[i] - mean_energy) * 2 * u_reshape[i]
+            # partials.append(grad)
+            partials.append(grad.flatten())
         return partials
 
     def surge_fairness(self, u, grad=False):

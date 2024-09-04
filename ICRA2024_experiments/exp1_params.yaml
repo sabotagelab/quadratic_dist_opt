@@ -6,13 +6,13 @@
   fair_planner:
     alpha: 0.000000001
     distributed:
-      kappa: 0.1
-      eps_bounds: 5
+      kappa: 1
+      eps_bounds: 10
       iter: 1000
   safe_planner:
     central:
-      h_gamma: 1.5 #18
-      V_alpha: .175 #.2
+      h_gamma: 0.15
+      V_alpha: 0.025
     distributed:
       hi: .1
       ho: .1
