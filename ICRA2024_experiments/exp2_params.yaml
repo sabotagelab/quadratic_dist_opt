@@ -4,7 +4,7 @@
   sd: 0.01
   Ubox: 100
   fair_planner:
-    alpha: 0.000000001
+    alpha: 0.00000001
     distributed:
       kappa: 1
       eps_bounds: 10
@@ -40,7 +40,7 @@
   sd: 0.01
   Ubox: 100
   fair_planner:
-    alpha: 0.000000001
+    alpha: 0.0000001
     distributed:
       kappa: 1
       eps_bounds: 10
@@ -79,7 +79,7 @@
   sd: 0.01
   Ubox: 100
   fair_planner:
-    alpha: 0.000000001
+    alpha: 0.0000001
     distributed:
       kappa: 1
       eps_bounds: 10
@@ -118,7 +118,7 @@
   sd: 0.01
   Ubox: 100
   fair_planner:
-    alpha: 0.000000001
+    alpha: 0.0000001
     distributed:
       kappa: 1
       eps_bounds: 10
@@ -160,7 +160,7 @@
   sd: 0.01
   Ubox: 100
   fair_planner:
-    alpha: 0.000000001
+    alpha: 0.0000001
     distributed:
       kappa: 1
       eps_bounds: 10
@@ -202,7 +202,7 @@
   sd: 0.01
   Ubox: 100
   fair_planner:
-    alpha: 0.000000001
+    alpha: 0.0000001
     distributed:
       kappa: 1
       eps_bounds: 10
@@ -247,7 +247,7 @@
   sd: 0.001
   Ubox: 100
   fair_planner:
-    alpha: 0.000000001
+    alpha: 0.00000001
     distributed:
       kappa: 1
       eps_bounds: 10

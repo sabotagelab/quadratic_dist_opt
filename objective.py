@@ -3,6 +3,7 @@ import numpy as np
 from scipy.optimize import Bounds, basinhopping, minimize, NonlinearConstraint
 import time
 from generate_trajectories import generate_agent_states
+from jax import jit
 from jaxopt import CvxpyQP, OSQP, BoxOSQP
 from jaxopt import ProjectedGradient
 from jaxopt.projection import projection_polyhedron
@@ -13,7 +14,14 @@ import warnings
 EPS = 1e-8
 CP_SOLVER='ECOS'
 # CP_SOLVER='MOSEK'
-SCIPY_SOLVER='L-BFGS-B' # 'SLSQP' 
+
+QP_FAIR = BoxOSQP()
+
+@jit
+def solve_local_jax_fun(Q, c, A, l, u):
+    params, res = QP_FAIR.run(params_obj=(Q, c), params_eq=A, params_ineq=(l, u))
+    return params.primal[0]
+
 
 class Objective():
     def __init__(self, N, H, system_model_config, init_states, init_pos, obstacles, targets, \
@@ -128,8 +136,8 @@ class Objective():
         start_time = time.time()
         for s in range(steps):
             try:
-                new_eps = self.solve_local(u.flatten(), curr_t, prev_eps, dyn=dyn, pick=(s % self.N))
-                # new_eps = self.solve_local_jax(u, curr_t, prev_eps, orig_init_states, pick=(s % self.N))
+                # new_eps = self.solve_local(u.flatten(), curr_t, prev_eps, dyn=dyn, pick=(s % self.N))
+                new_eps = self.solve_local_jax(u, curr_t, prev_eps, orig_init_states, pick=(s % self.N))
                 if len(new_eps) == 0:
                     new_eps = prev_eps
             except Exception as e:
@@ -150,8 +158,9 @@ class Objective():
             # Check if inputs converged
             diff = np.linalg.norm(u - prev_u) 
             # thresh = 0.1 if curr_t > 0 else 0.01
-            thresh = 0.5 if curr_t > 0 else 0.2
-            thresh_mult = 0.1 if self.N > 20 else 1
+            # thresh = 0.5 #if curr_t > 0 else 0.2
+            thresh = 0.5 if self.notion in [0, 4] else 0.1
+            thresh_mult = 2 if self.N > 10 else 1
             if diff < (thresh * thresh_mult):
                 break
             if curr_t > 0:
@@ -160,8 +169,6 @@ class Objective():
             if new_eps == 0:
                 break
         
-        # TEST
-        # self.solve_local_jax(u, curr_t, prev_eps, orig_init_states, pick=(s % self.N))
         u = min_fair_sol  # return best solution
         return u, s, fairness #, alignment_values
 
@@ -331,72 +338,21 @@ class Objective():
             upper_bound = np.append(upper_bound, self.Ubox * np.ones(self.H*3) - curr_agent_u.flatten())
 
             # Solve problem
-            # Using CVXPY
-            # eps = cp.Variable(self.H * control_input_size)
-            # constraints = [
-            #     lower_bound <= self.A @ eps,
-            #     self.A @ eps <= upper_bound]
-            # objective = cp.Minimize(-1 * (eps.T @ grad) + self.kappa * cp.norm(eps)**2 )
-            # prob = cp.Problem(objective, constraints)
-            # prob.solve(verbose=False, solver=CP_SOLVER)
-            # eps = np.array(eps.value).reshape(self.H, control_input_size)
-            # print('redo cvxpy')
-            # print(prob.status)
-            # print(eps)
             # Using Quadratic Program Solver
-            # Q = jnp.array(np.eye(self.H*3))
             Q = jnp.array(2 * self.kappa * np.eye(self.H*3))
-            # c = jnp.array(np.ones(self.H*3))
-            # Q = jnp.array(grad)
-            # c = jnp.array(prev_eps)
             c = jnp.array(-1 * grad)
             A = jnp.array(self.A)
             l = jnp.array(lower_bound)
             u = jnp.array(upper_bound)
-            # qp = BoxOSQP(fun=self.solve_local_jax_fun)
-            qp = BoxOSQP()
-            init_params = qp.init_params(init_x=jnp.array(prev_eps[i]), params_obj=(Q, c), params_eq=A, params_ineq=(l, u))
-            params, res = qp.run(init_params=init_params, params_obj=(Q, c), params_eq=A, params_ineq=(l, u))
+            # qp = BoxOSQP()
+            # params, res = qp.run(params_obj=(Q, c), params_eq=A, params_ineq=(l, u))
+            sol = solve_local_jax_fun(Q, c, A, l, u)
             
-            # Using Projected Gradient        
-            # A = jnp.array(np.zeros((self.H*3, self.H*3), dtype=np.float32))
-            # b = jnp.array(np.zeros(self.H*3, dtype=np.float32))
-            # G = jnp.array(np.concatenate([self.A, -1 * self.A], axis=0))
-            # h = jnp.array(np.array([upper_bound, -1 * lower_bound]).flatten())
-            # print('building solver')
-            # qp = ProjectedGradient(fun=self.solve_local_jax_fun, projection=projection_polyhedron)
-            # print('solving')
-            # params, res = qp.run(jnp.array(prev_eps[i]), params_obj=(Q,c), hyperparams_proj=(A, b, G, h))
-            # print('solve status')
-            # print(res.status)
-            # # print(params.primal[0])
-            eps = np.array(params.primal[0]).reshape(self.H, control_input_size)
+            # eps = np.array(params.primal[0]).reshape(self.H, control_input_size)
+            eps = np.array(sol).reshape(self.H, control_input_size)
             eps = np.flip(eps, axis=0).flatten()
             solved_values.append(eps)
         return solved_values
-
-    def solve_local_jax_fun(self, x, params_obj):
-        Q, c = params_obj
-        grad = Q
-        res = -1 * jnp.dot(x.T, grad) + self.kappa * jnp.linalg.norm(x)**2
-        return res
-            
-    ##########################################################
-    # Reach Constraint
-    ###########################################################
-
-    def reach_constraint(self, u):
-        control_input_size = self.control_input_size
-        u_reshape = u.reshape((self.N, self.H, control_input_size))
-        num_agents = len(self.init_states)
-        reach = -np.inf
-        for i in range(num_agents):
-            state_i, pos_i = generate_agent_states(u_reshape[i], self.init_states[i], self.init_pos[i], model=self.system_model, dt=self.dt)
-            final_pos = pos_i[len(pos_i)-1]
-            target_center = self.targets[i]['center']
-            target_radius = self.targets[i]['radius']
-            reach = np.maximum(reach, np.linalg.norm(final_pos - target_center) - target_radius)
-        return reach
     
     ##########################################################
     # Fairness Notions
@@ -476,13 +432,18 @@ class Objective():
             mean_energy_magnitude = int(np.floor(np.log10(agent_mean_energies)))
         # scale down magnitude
         agent_energies = agent_energies * 10**(-mean_energy_magnitude)
-        surges = np.abs(np.diff(agent_energies))
+        
+        # surges = np.abs(np.diff(agent_energies))
+        # agent_max_surge = []
+        # for i in range(self.N):
+        #     agent_max_surge.append(np.mean(surges[i]))
+        # fairness = np.var(agent_max_surge)
 
-        agent_max_surge = []
+        surges = np.abs(np.diff(agent_energies)) - self.eps_bounds
+        agent_total_surge = []
         for i in range(self.N):
-            agent_max_surge.append(np.mean(surges[i]))
-    
-        fairness = np.var(agent_max_surge)
+            agent_total_surge.append(np.sum(surges[i]))
+        fairness = np.var(agent_total_surge)
         return fairness
 
     def _surge_fairness_local(self, u):
@@ -499,17 +460,31 @@ class Objective():
             mean_energy_magnitude = int(np.floor(np.log10(agent_mean_energies)))
         # scale down magnitude
         agent_energies = agent_energies * 10**(-mean_energy_magnitude)
-        surges = np.abs(np.diff(agent_energies))
         
-        agent_max_surge = []
+        # surges = np.diff(agent_energies)
+        # agent_max_surge = []
+        # for i in range(self.N):
+        #     agent_max_surge.append(np.mean(surges[i]))
+        # mean_agent_surge = np.mean(agent_max_surge)
+        # partials = []
+        # for i in range(self.N):
+        #     grad = 2 * (1/self.N) * (agent_max_surge[i] - mean_agent_surge) * 2 * u_reshape[i]
+        #     # partials.append(grad)
+        #     partials.append(grad.flatten())
+
+        surges = np.abs(np.diff(agent_energies)) - self.eps_bounds
+        sign_surges = np.sign(np.diff(agent_energies))
+        agent_total_surge = []
         for i in range(self.N):
-            agent_max_surge.append(np.mean(surges[i]))
-        
-        mean_agent_surge = np.mean(agent_max_surge)
+            agent_total_surge.append(np.sum(surges[i]))
+        mean_agent_surge = np.mean(agent_total_surge)
         partials = []
         for i in range(self.N):
-            grad = 2 * (1/self.N) * (agent_max_surge[i] - mean_agent_surge)
-            partials.append(grad)   
+            ut_1 = np.concatenate([np.array([0, 0, 0]).reshape((1, 3)), u_reshape[i][1:]], axis=0)
+            u_diff = u_reshape[i] - ut_1
+            ss = np.concatenate([[0], sign_surges[i]], axis=0)
+            grad = 2 * (1/self.N) * (agent_total_surge[i] - mean_agent_surge) * 2 * u_diff * ss[i, np.newaxis].T
+            partials.append(grad.flatten())
         return partials
     
 
@@ -544,7 +519,7 @@ class Objective():
         drone_reach = 0
         if not avoid_only:
             cg = self.targets[drone_id]['center']
-            rg = self.targets[drone_id]['radius'] + 0.4
+            rg = self.targets[drone_id]['radius']
             distance_to_target = np.linalg.norm(final_p - cg)
             if distance_to_target > rg:
                 drone_reach = 1
@@ -572,8 +547,6 @@ class Objective():
 
     def solve_nbf(self, seed_u, last_delta=None, mpc=False, h_gamma=1, V_alpha=1):
         # Centrally Solve for Obstacle Avoidance
-        f = self.f
-        g = self.g
         f_diag = self.f_diag
         g_diag = self.g_diag
     
@@ -587,15 +560,10 @@ class Objective():
             rob = self.system_model(self.init_states[r], dt=self.dt)
             robots.append(rob)
 
-        if seed_u is not None:
-            u_fair_t = cp.Parameter((self.N*self.control_input_size), 
-                                    value=np.zeros(self.N*self.control_input_size))
-            # objective = cp.Minimize(cp.sum_squares(u_t - u_fair_t) + delta**2 + w)
-            objective = cp.Minimize(cp.sum_squares(u_t - u_fair_t) + delta**2)
-        else:
-            u_ref_t = cp.Parameter((self.N*self.control_input_size), 
-                                   value=np.zeros(self.N*self.control_input_size))
-            objective = cp.Minimize(cp.sum_squares(u_t - u_ref_t))
+        u_fair_t = cp.Parameter((self.N*self.control_input_size), 
+                                value=np.zeros(self.N*self.control_input_size))
+        # objective = cp.Minimize(cp.sum_squares(u_t - u_fair_t) + delta**2 + w)
+        objective = cp.Minimize(cp.sum_squares(u_t - u_fair_t) + delta**2)
         final_u = []
         for t in range(self.H):
             u_refs_fair = []
@@ -610,7 +578,6 @@ class Objective():
             # NBFs
             h_c_min = 9999
             h_cs = []
-            A = []
             h_o_min = 9999
             h_os = []
             B = []
@@ -634,7 +601,7 @@ class Objective():
                 # reach goal
                 cg = self.targets[r]['center']
                 rg = self.targets[r]['radius']
-                V = (pos[0] - cg[0])**2 + (pos[1] - cg[1])**2 + (pos[2] - cg[2])**2 - (rg/2)**2   # TODO: include target velocities?
+                V = (pos[0] - cg[0])**2 + (pos[1] - cg[1])**2 + (pos[2] - cg[2])**2 - (rg/2)**2 
                 Vs.append(V)
                 V_max = np.max([V_max, V])
                 Crow_start = [0 for i in range(r*6)]
@@ -643,17 +610,18 @@ class Objective():
                 C.append(Crow)
                 
                 # mutual separation
-                drone_start = self.starts[r]
-                dsc = drone_start['center']
-                dsr = drone_start['radius']
-                dist_from_start = (pos[0] - dsc[0])**2 + (pos[1] - dsc[1])**2 + (pos[2] - dsc[2])**2
-                if (dist_from_start <= dsr**2 or V <= 0):
-                    # print('still in start, continuing')
-                    continue
+                # drone_start = self.starts[r]
+                # dsc = drone_start['center']
+                # dsr = drone_start['radius']
+                # dist_from_start = (pos[0] - dsc[0])**2 + (pos[1] - dsc[1])**2 + (pos[2] - dsc[2])**2
+                # if (dist_from_start <= dsr**2 or V <= 0):
+                #     # print('still in start, continuing')
+                #     continue
                 for s in range(r+1, self.N):
                     pos1 = robots[s].state[0:3]
                     h_c = (pos[0] - pos1[0])**2 + (pos[1] - pos1[1])**2 + (pos[2] - pos1[2])**2 - self.safe_dist**2
-                    h_cs.append(h_c)
+                    # h_cs.append(h_c)
+                    h_os.append(h_c)
                     h_c_min = np.min([h_c_min, h_c])
                     deriv = [2*(pos[0] - pos1[0]), 2*(pos[1] - pos1[1]), 2*(pos[2] - pos1[2]), 0, 0, 0]
                     nderiv = [-2*(pos[0] - pos1[0]), -2*(pos[1] - pos1[1]), -2*(pos[2] - pos1[2]), 0, 0, 0]
@@ -661,19 +629,15 @@ class Objective():
                     Arow_mid = [0 for i in range((r+1)*6, s*6)]
                     Arow_end = [0 for i in range((s+1)*6, self.N*6)]
                     Arow = Arow_start + deriv + Arow_mid + nderiv + Arow_end
-                    # A.append(Arow)
                     B.append(Arow)
 
             h_min = np.min([h_c_min, h_o_min])
             if len(B) > 0:
                 B = np.array(B)
-                # Lfh1 = np.dot(B, f_diag @ np.array(state_collect).flatten()) 
-                # Lgh1_u = np.dot(B, g_diag @ u_t)
-                constraints.append(B @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t) + h_gamma*h_min >= 0)
+                # constraints.append(B @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t) + h_gamma*h_min >= 0)
+                constraints.append(B @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t) + h_gamma*h_min >= self.N * 0.1)
 
             C = np.array(C)
-            # LfV = np.dot(C, f_diag @ np.array(state_collect).flatten()) 
-            # LgV_u = np.dot(C, g_diag @ u_t)
             constraints.append(C @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t) + V_alpha*V_max <= delta)
 
             # constraints.append(w >= 0)
@@ -684,7 +648,7 @@ class Objective():
             if last_delta is not None:
                 last_delta = max(0, last_delta)  # don't let last alpha be negative ?
                 # last_delta = np.maximum(np.zeros(self.N), last_delta)
-                constraints.append(delta <= last_delta)
+                # constraints.append(delta <= last_delta)
 
             cbf_controller = cp.Problem(objective, constraints)
             cbf_controller.solve(solver=CP_SOLVER)
@@ -693,34 +657,38 @@ class Objective():
             if cbf_controller.status in ['infeasible', 'infeasible_inaccurate']:
                 # print(f"QP infeasible")
                 print(f"attempting relaxation ubox constraint")
-                constraints.pop() #delta constraint
+                # constraints.pop() #delta constraint
                 constraints.pop() #ubox constraint
                 constraints.pop() #ubox constraint
-                constraints.append(delta <= last_delta)
+                # constraints.append(delta <= last_delta)
                 cbf_controller = cp.Problem(objective, constraints)
                 cbf_controller.solve(solver=CP_SOLVER)
                 relaxed = True
                 if cbf_controller.status in ['infeasible', 'infeasible_inaccurate']:
-                    if last_delta is not None:
-                        print(f"attempting relaxing delta constraint")
-                        constraints.pop() # delta constraint
-                        cbf_controller = cp.Problem(objective, constraints)
-                        cbf_controller.solve(solver=CP_SOLVER)
-                        if cbf_controller.status in ['infeasible', 'infeasible_inaccurate']:
-                            print(f"Relaxed problem also infeasible")
-                            # cbf_controller.solve(solver=CP_SOLVER, verbose=True)
-                            raise Exception('Central Safe Problem Infeasible after relaxation')
-                    else:
-                        # print(cbf_controller)
-                        # cbf_controller.solve(solver=CP_SOLVER, verbose=True)
-                        raise Exception('Central Safe Problem Infeasible')
-            for r in range(self.N):
-                idx_start = r*self.control_input_size
-                idx_end = idx_start + self.control_input_size
-                _, _ = robots[r].forward(u_t.value[idx_start:idx_end])
+                    # if last_delta is not None:
+                    #     print(f"attempting relaxing delta constraint")
+                    #     constraints.pop() # delta constraint
+                    #     cbf_controller = cp.Problem(objective, constraints)
+                    #     cbf_controller.solve(solver=CP_SOLVER)
+                    #     if cbf_controller.status in ['infeasible', 'infeasible_inaccurate']:
+                    #         print(f"Relaxed problem also infeasible")
+                    #         # cbf_controller.solve(solver=CP_SOLVER, verbose=True)
+                    #         raise Exception('Central Safe Problem Infeasible after relaxation')
+                    # else:
+                    #     # print(cbf_controller)
+                    #     # cbf_controller.solve(solver=CP_SOLVER, verbose=True)
+                    #     raise Exception('Central Safe Problem Infeasible')
+                    raise Exception('Central Safe Problem Infeasible after relaxation')
             final_u.append(u_t.value.reshape(self.N, self.control_input_size))
-            if mpc:
-                break
+            if not mpc:
+                for r in range(self.N):
+                    idx_start = r*self.control_input_size
+                    idx_end = idx_start + self.control_input_size
+                    _, _ = robots[r].forward(u_t.value[idx_start:idx_end])
+            break
+        
+        # print(B @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t.value) + h_gamma*h_min)
+        # print(C @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t.value) + V_alpha*V_max)
         return final_u, h_min, V_max, delta.value[0], h_os, h_cs, Vs, relaxed
         
 
@@ -756,10 +724,6 @@ class Objective():
             clfs.append(clf_val)
             ui = seed_input[i]
             uis.append(ui)
-            # neighbor_inputs = np.delete(seed_input, i, axis=0)
-            # static_inputs = np.zeros(3*(len(self.obstacles)+1))
-            # ui_full = np.hstack([ui, neighbor_inputs.flatten(), static_inputs])
-            # uis.append(ui_full)
 
         # Initialize trackers for TRADES ALG
         self.init_uis_dist_nbf = uis
@@ -1011,9 +975,9 @@ class Objective():
                 v[i] = self.Ubox
             else:
                 continue
-        last_delta = max(0, last_delta)
-        if v[3] > last_delta:
-            v[3] = last_delta
-        if v[3] < 0:
-            v[3] = 0
+        # last_delta = max(0, last_delta)
+        # if v[3] > last_delta:
+        #     v[3] = last_delta
+        # if v[3] < 0:
+        #     v[3] = 0
         return v

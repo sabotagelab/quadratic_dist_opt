@@ -120,8 +120,6 @@ for t in range(trials):
     clf_reach = []
     runtimes_fair_planner = []
     runtimes_safe_planner = []
-    andreas_fairness_so_far = []
-    opt_fairness_so_far = []
     for i in range(N):
         # Pick Start Area and Generate Random Position Within Area
         # start = np.random.choice(list(starts.keys()))
@@ -173,6 +171,12 @@ for t in range(trials):
     last_delta = None
     surge_thresh = 0
     solo_energies = []
+    f1_so_far = []
+    f4_so_far = []
+    erg_so_far = []
+    f1_base_so_far = []
+    f4_base_so_far = []
+    erg_base_so_far = []
     for Hbar in range(H, 0, -1):
         # print('Time Step {}'.format(H-Hbar))
         # GENERATE INITIAL "CONTROL INPUTS" AND TRAJECTORIES
@@ -218,74 +222,31 @@ for t in range(trials):
         #     plt.show()
 
         # GENERATE SOLO ENERGIES
-        # use the above inputs from generate_init_traj_quad to get the solo energies IF IT'S THE FIRST PLANNED TRAJECTORY
+        # use the above inputs from generate_init_traj_quad to get the solo energies from initial trajectory
         # solo_energies = []
         if Hbar == H:
             for i in range(N):
-                if len(final_us) > 0:
-                    unified_andreas_inputs = np.concatenate([np.array(final_us).transpose(1, 0, 2), init_u], axis=1)
-                else:
-                    unified_andreas_inputs = init_u
+                unified_andreas_inputs = init_u
                 solo_energies.append(np.linalg.norm(unified_andreas_inputs[i])**2)
-                # solo_energies.append(np.linalg.norm(init_u[i])**2)
         
         # INIT SOLVER
         # print('Fair Solver!')
         n = N*H*control_input_size
         Q = np.random.randn(n, n)   # variable for quadratic objective
         Q = Q.T @ Q  
-        seed_u = init_u      
+        curr_t = H - Hbar
+        seed_u = init_u
+        obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, drone_goals, drone_starts, Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
+        obj.solo_energies = solo_energies      
         fair_planner_time_start = time.time()
         converge_iter = 0
         if notion != 2:
-            obj = Objective(N, H, system_model_config, init_states, init_pos, obstacles, drone_goals, drone_starts, Q, alpha, kappa, eps_bounds, Ubox, dt=dt, notion=notion, safe_dist=safe_dist)
-            obj.solo_energies = solo_energies
             # print('Running Fair Planner at time {}'.format(H-Hbar))
             try:
-                curr_t = H - Hbar
                 seed_u, converge_iter, fairness_res = obj.solve_distributed(init_u, final_us, curr_t, steps=fair_dist_iter, dyn='quad', orig_init_states=orig_init_states)
-                print(converge_iter)
-                # print('Fairness of Andreas inputs at this time {}'.format(H - Hbar))
-                # print(np.round(obj.fairness(np.concatenate([np.array(final_us).flatten(), init_u.flatten()])), 3))
-                if len(final_us) > 0:
-                    unified_andreas_inputs = np.concatenate([np.array(final_us).transpose(1, 0, 2), init_u], axis=1)
-                else:
-                    unified_andreas_inputs = init_u
-                andreas_fair = np.round(obj.fairness(unified_andreas_inputs), 3)
-                andreas_fairness_so_far.append(andreas_fair)
-
-                # print('Fairness of Inputs at this time after optimization')
-                # print(np.linalg.norm(seed_u.flatten() - unified_andreas_inputs.flatten()))
-                opt_fair = np.round(obj.fairness(seed_u.flatten()), 3)
-                opt_fairness_so_far.append(opt_fair)
                 seed_u = np.array(seed_u).reshape((N, H, control_input_size))
                 seed_u = seed_u[:, curr_t:, :]
-
-                # Plotting how this iteration optimized for fairness
-                # plt.plot(fairness_res, label='Alg 1 iterations', color='blue')
-                # # plt.hlines(andreas_fair, xmin=0, xmax=len(fairness_res), label='Fairness at Input', color='red')
-                # # plt.hlines(opt_fair, xmin=0, xmax=len(fairness_res), label='Fairness at Output', color='green')
-                # # # print(local_alignments)
-                # # local_alignments = np.array(local_alignments).reshape((N, len(fairness_res)))
-                # # for la_num, la in enumerate(local_alignments):
-                # #     plt.plot(la, label='Alignments agent {}'.format(la_num))
-                # plt.legend()
-                # plt.show()
-
-                if curr_t == 0:
-                    fair_us = np.array(seed_u)
-                    fair_drone_results = obj.check_avoid_constraints(fair_us)
-                    fair_trial_result = max(fair_drone_results)
-
-                    fair_sol_energy = alpha * np.round(obj.quad(fair_us.flatten()), 3)
-                    fair_sol_fairness1 = np.round(obj.fairness(fair_us.flatten()), 3)
-                    fair_sol_fairness4 = np.round(obj.surge_fairness(fair_us.flatten()), 3)
-                    fair_planner_init_time = time.time() - fair_planner_time_start
-
-                    fair_trial_res = [t, fair_trial_result, fair_sol_energy, fair_sol_fairness1, fair_sol_fairness4, fair_planner_init_time, converge_iter]
-                    with open('{}/trial_results_init_fair_sol.csv'.format(exp_dir), 'a') as file_obj:
-                        writer_obj = writer(file_obj)
-                        writer_obj.writerow(fair_trial_res)
+                print(converge_iter)
 
             except Exception as e:
                 print(e)
@@ -297,6 +258,26 @@ for t in range(trials):
                 fair_planner_error = True
         runtimes_fair_planner.append(time.time() - fair_planner_time_start)
         fair_planner_iter.append(converge_iter)
+
+        # Compute Fairness So Far
+        if len(final_us) > 0:
+            fair_us = np.concatenate([np.array(final_us).transpose(1, 0, 2), seed_u], axis=1)
+            andreas_us = np.concatenate([np.array(final_us).transpose(1, 0, 2), init_u], axis=1)
+        else:
+            fair_us = seed_u
+            andreas_us = init_u
+        fair_sol_energy = alpha * np.round(obj.quad(fair_us.flatten()), 3)
+        fair_sol_fairness1 = np.round(obj.fairness(fair_us.flatten()), 3)
+        fair_sol_fairness4 = np.round(obj.surge_fairness(fair_us.flatten()), 3)
+        erg_so_far.append(fair_sol_energy)
+        f1_so_far.append(fair_sol_fairness1)
+        f4_so_far.append(fair_sol_fairness4)
+        base_sol_energy = alpha * np.round(obj.quad(andreas_us.flatten()), 3)
+        base_sol_fairness1 = np.round(obj.fairness(andreas_us.flatten()), 3)
+        base_sol_fairness4 = np.round(obj.surge_fairness(andreas_us.flatten()), 3)
+        erg_base_so_far.append(base_sol_energy)
+        f1_base_so_far.append(base_sol_fairness1)
+        f4_base_so_far.append(base_sol_fairness4)
 
         # if t == 0 and ((Hbar - H) % 5 == 0):
         #     print('Figure For Fair Trajectories')
@@ -557,11 +538,6 @@ for t in range(trials):
     plt.clf()
     plt.close()
 
-    # Also plot delta values 
-    # plt.plot(list(range(len(all_deltas))), all_deltas)
-    # plt.savefig('{}/deltas.png'.format(trial_dir))
-    # plt.clf()
-
     # SAVE FINAL TRAJ
     final_trajectories = np.round(final_trajectories.reshape((N, H*3+3)), 3)
     drone_results = np.array(drone_results).reshape(N, 1)
@@ -575,32 +551,8 @@ for t in range(trials):
     final_vels_result = np.concatenate([drone_results, final_vels], axis=1)
     np.savetxt('{}/final_vels.csv'.format(trial_dir), final_vels_result, fmt='%f')
 
-    # if not dist_nbf:
-    #     save_cbf_clf_vals = np.round(np.array([cbf_values, clf_values]), 3)
-    #     np.savetxt('{}/cbf_clf_values.csv'.format(trial_dir), save_cbf_clf_vals.T, fmt='%f')
-
-    #     # if N == 3:
-    #     np.savetxt('{}/ind_cbf_obstacles.csv'.format(trial_dir), np.array(cbf_obstacles), fmt='%f')
-    #     np.savetxt('{}/ind_cbf_separation.csv'.format(trial_dir), np.array(cbf_separation), fmt='%f')
-    #     np.savetxt('{}/ind_clf_reach.csv'.format(trial_dir), np.array(clf_reach), fmt='%f')
-            
-    #         # plt.plot(list(range(len(cbf_obstacles))), cbf_obstacles)
-    #         # plt.savefig('{}/ind_cbf_obstacles.png'.format(trial_dir))
-    #         # plt.clf()
-
-    #         # plt.plot(list(range(len(cbf_separation))), cbf_separation)
-    #         # plt.savefig('{}/ind_cbf_separation.png'.format(trial_dir))
-    #         # plt.clf()
-
-    #         # plt.plot(list(range(len(clf_reach))), clf_reach)
-    #         # plt.savefig('{}/ind_cld_reach.png'.format(trial_dir))
-    #         # plt.clf()
-    # else:
-    #     save_cbf_clf_vals = np.round(np.array([np.min(cbf_values, axis=1), np.max(clf_values, axis=1)]), 3)
-    #     np.savetxt('{}/cbf_clf_values.csv'.format(trial_dir), save_cbf_clf_vals.T, fmt='%f')
-
     # Save Fairness Tracking
-    comb_fairness = np.array([andreas_fairness_so_far, opt_fairness_so_far])
+    comb_fairness = np.array([erg_so_far, f1_so_far, f4_so_far, erg_base_so_far, f1_base_so_far, f4_base_so_far])
     np.savetxt('{}/fairness_tracking.csv'.format(trial_dir), comb_fairness.T, fmt='%f')
 
 print('Successful Trials {}'.format(successful_trials))
