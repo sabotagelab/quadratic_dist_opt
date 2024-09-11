@@ -26,38 +26,44 @@ conda activate quad_dist_opt
 
 # EXPERIMENT 2
 python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_no_fair_N5 --notion 2 --trials 20 --N 5 --dist &> exp2_dist_no_fair_N5_test.out
-python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair0_N5 --notion 0 --trials 20 --N 5 --dist &> /exp2_dist_fair0_N5/test.out
-python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair3_N5 --notion 3 --trials 20 --N 5 --dist &> /exp2_dist_fair3_N5/test.out
+python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair0_N5 --notion 0 --trials 20 --N 5 --dist &> exp2_dist_fair0_N5_test.out
+python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair3_N5 --notion 3 --trials 20 --N 5 --dist &> exp2_dist_fair3_N5_test.out
 python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair4_N5 --notion 4 --trials 20 --N 5 --dist &> exp2_dist_fair4_N5_test.out
-python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair5_N5 --notion 5 --trials 20 --N 5 --dist &> /exp2_dist_fair5_N5/test.out
+python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair5_N5 --notion 5 --trials 20 --N 5 --dist &> exp2_dist_fair5_N5_test.out
 
-python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_no_fair_N7 --notion 2 --trials 20 --N 7 --dist &> exp2_dist_no_fair_N7_test.out
+# python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_no_fair_N7 --notion 2 --trials 20 --N 7 --dist &> exp2_dist_no_fair_N7_test.out
 # python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair0_N7 --notion 0 --trials 20 --N 7 --dist &> /exp2_dist_fair0_N7/test.out
 # python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair3_N7 --notion 3 --trials 20 --N 7 --dist &> /exp2_dist_fair3_N7/test.out
-python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair4_N7 --notion 4 --trials 20 --N 7 --dist &> exp2_dist_fair4_N7_test.out
+# python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair4_N7 --notion 4 --trials 20 --N 7 --dist &> exp2_dist_fair4_N7_test.out
 # python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair5_N7 --notion 5 --trials 20 --N 7 --dist &> /exp2_dist_fair5_N7/test.out
 
 python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_no_fair_N10 --notion 2 --trials 20 --N 10 --dist &> exp2_dist_no_fair_N10_test.out
-# python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair0_N10 --notion 0 --trials 20 --N 10 --dist &> /exp2_dist_fair0_N10/test.out
-# python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair3_N10 --notion 3 --trials 20 --N 10 --dist &> /exp2_dist_fair3_N10/test.out
+python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair0_N10 --notion 0 --trials 20 --N 10 --dist &> /exp2_dist_fair0_N10/test.out
+python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair3_N10 --notion 3 --trials 20 --N 10 --dist &> /exp2_dist_fair3_N10/test.out
 python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair4_N10 --notion 4 --trials 20 --N 10 --dist &> exp2_dist_fair4_N10_test.out
-# python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair5_N10 --notion 5 --trials 20 --N 10 --dist &> /exp2_dist_fair5_N10/test.out
+python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair5_N10 --notion 5 --trials 20 --N 10 --dist &> /exp2_dist_fair5_N10/test.out
 
-python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_no_fair_N12 --notion 2 --trials 20 --N 12 --dist &> exp2_dist_no_fair_N12_test.out
+# python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_no_fair_N12 --notion 2 --trials 20 --N 12 --dist &> exp2_dist_no_fair_N12_test.out
 # python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair0_N12 --notion 0 --trials 20 --N 12 --dist &> /exp2_dist_fair0_N12/test.out
 # python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair3_N12 --notion 3 --trials 20 --N 12 --dist &> /exp2_dist_fair3_N12/test.out
-python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair4_N12 --notion 4 --trials 20 --N 12 --dist &> exp2_dist_fair4_N12_test.out
+# python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair4_N12 --notion 4 --trials 20 --N 12 --dist &> exp2_dist_fair4_N12_test.out
 # python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair5_N12 --notion 5 --trials 20 --N 12 --dist &> /exp2_dist_fair5_N12/test.out
 
-python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_no_fair_N15 --notion 2 --trials 20 --N 15 --dist &> exp2_dist_no_fair_N15_test.out
+# python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_no_fair_N15 --notion 2 --trials 20 --N 15 --dist &> exp2_dist_no_fair_N15_test.out
 # python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair0_N15 --notion 0 --trials 20 --N 15 --dist &> /exp2_dist_fair0_N15/test.out
 # python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair3_N15 --notion 3 --trials 20 --N 15 --dist &> /exp2_dist_fair3_N15/test.out
-python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair4_N15 --notion 4 --trials 20 --N 15 --dist &> exp2_dist_fair4_N15_test.out
+# python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair4_N15 --notion 4 --trials 20 --N 15 --dist &> exp2_dist_fair4_N15_test.out
 # python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair5_N15 --notion 5 --trials 20 --N 15 --dist &> /exp2_dist_fair5_N15/test.out
 
 # EXPERIMENT 2, 50 DRONES
-python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_no_fair_N20 --notion 2  --N 20 --trials 20 --dist &> exp2_dist_no_fair_N20_test.out
+python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_no_fair_N20 --notion 2 --N 20 --trials 20 --dist &> exp2_dist_no_fair_N20_test.out
+python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair0_N20 --notion 0 --N 20 --trials 20 --dist &> exp2_dist_fair0_N20_test.out
+python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair3_N20 --notion 3 --N 20 --trials 20 --dist &> exp2_dist_fair3_N20_test.out
 python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair4_N20 --notion 4 --N 20 --trials 20 --dist &> exp2_dist_fair4_N20_test.out
+python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair5_N20 --notion 5 --N 20 --trials 20 --dist &> exp2_dist_fair5_N20_test.out
 
-python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_no_fair_N50 --notion 2 --N 50 --trials 5 --dist &> exp2_dist_no_fair_N50_test.out
-python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair4_N50 --notion 4 --N 50 --trials 5 --dist &> exp2_dist_fair4_N50_test.out
+python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_no_fair_N50 --notion 2 --N 50 --trials 20 --dist &> exp2_dist_no_fair_N20_test.out
+python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair0_N50 --notion 0 --N 50 --trials 20 --dist &> exp2_dist_fair0_N20_test.out
+python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair3_N50 --notion 3 --N 50 --trials 20 --dist &> exp2_dist_fair3_N20_test.out
+python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair4_N50 --notion 4 --N 50 --trials 20 --dist &> exp2_dist_fair4_N20_test.out
+python mpc_test_fixed_obs_scale_num_drones.py --exp_dir /exp2_dist_fair5_N50 --notion 5 --N 50 --trials 20 --dist &> exp2_dist_fair5_N20_test.out

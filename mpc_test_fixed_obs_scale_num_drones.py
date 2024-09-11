@@ -246,7 +246,7 @@ for t in range(trials):
                 seed_u, converge_iter, fairness_res = obj.solve_distributed(init_u, final_us, curr_t, steps=fair_dist_iter, dyn='quad', orig_init_states=orig_init_states)
                 seed_u = np.array(seed_u).reshape((N, H, control_input_size))
                 seed_u = seed_u[:, curr_t:, :]
-                print(converge_iter)
+                # print(converge_iter)
 
             except Exception as e:
                 print(e)

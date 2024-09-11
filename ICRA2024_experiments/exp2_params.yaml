@@ -17,8 +17,10 @@
       hi: .1
       ho: .1
       hv: .1
-      step_size: 0.001
-      trade_param: 0.1
+      step_size: 0.0015
+      trade_param: 0.08
+      # step_size: 0.0015
+      # trade_param: 0.1
   obstacles:
     obs1:
       center: [0, 0, 0.3] # [0, 0, .75]
@@ -45,6 +47,9 @@
       kappa: 1
       eps_bounds: 10
       iter: 1000
+      # kappa: 1
+      # eps_bounds: 10
+      # iter: 25
   safe_planner:
     central:
       h_gamma: 50
@@ -92,8 +97,10 @@
       hi: .1
       ho: .1
       hv: .1
-      step_size: 0.0008
-      trade_param: 0.05
+      # step_size: 0.0008
+      # trade_param: 0.05
+      step_size: 0.0001
+      trade_param: 0.1
   obstacles:
     obs1:
       center: [0, 0, 0.3] # [0, 0, .75]
