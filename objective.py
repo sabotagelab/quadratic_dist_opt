@@ -544,7 +544,6 @@ class Objective():
     ##########################################################
     # Online Solution (Obstacle Avoidance and Mutual Separation Only)
     ###########################################################
-
     def solve_nbf(self, seed_u, last_delta=None, mpc=False, h_gamma=1, V_alpha=1):
         # Centrally Solve for Obstacle Avoidance
         f_diag = self.f_diag
@@ -563,7 +562,8 @@ class Objective():
         u_fair_t = cp.Parameter((self.N*self.control_input_size), 
                                 value=np.zeros(self.N*self.control_input_size))
         # objective = cp.Minimize(cp.sum_squares(u_t - u_fair_t) + delta**2 + w)
-        objective = cp.Minimize(cp.sum_squares(u_t - u_fair_t) + delta**2)
+        # objective = cp.Minimize(cp.sum_squares(u_t - u_fair_t) + delta**2)
+        objective = cp.Minimize(cp.norm(u_t - u_fair_t)**2 + delta**2)
         final_u = []
         for t in range(self.H):
             u_refs_fair = []
@@ -590,7 +590,7 @@ class Objective():
                 for obsId, obs in self.obstacles.items():
                     c = obs['center']
                     rad = obs['radius'] + self.safe_dist
-                    h_o = (pos[0] - c[0])**2 + (pos[1] - c[1])**2 + (pos[2] - c[2])**2 - rad**2
+                    h_o = 2 * (pos[0] - c[0])**2 + (pos[1] - c[1])**2 + (pos[2] - c[2])**2 - rad**2
                     h_os.append(h_o)
                     h_o_min = np.min([h_o_min, h_o])
                     Brow_start = [0 for i in range(r*6)]
@@ -610,18 +610,17 @@ class Objective():
                 C.append(Crow)
                 
                 # mutual separation
-                # drone_start = self.starts[r]
-                # dsc = drone_start['center']
-                # dsr = drone_start['radius']
-                # dist_from_start = (pos[0] - dsc[0])**2 + (pos[1] - dsc[1])**2 + (pos[2] - dsc[2])**2
-                # if (dist_from_start <= dsr**2 or V <= 0):
-                #     # print('still in start, continuing')
-                #     continue
+                drone_start = self.starts[r]
+                dsc = drone_start['center']
+                dsr = drone_start['radius']
+                dist_from_start = (pos[0] - dsc[0])**2 + (pos[1] - dsc[1])**2 + (pos[2] - dsc[2])**2
+                if (dist_from_start <= dsr**2 or V <= 0):
+                    # print('still in start, continuing')
+                    continue
                 for s in range(r+1, self.N):
                     pos1 = robots[s].state[0:3]
                     h_c = (pos[0] - pos1[0])**2 + (pos[1] - pos1[1])**2 + (pos[2] - pos1[2])**2 - self.safe_dist**2
-                    # h_cs.append(h_c)
-                    h_os.append(h_c)
+                    h_cs.append(h_c)
                     h_c_min = np.min([h_c_min, h_c])
                     deriv = [2*(pos[0] - pos1[0]), 2*(pos[1] - pos1[1]), 2*(pos[2] - pos1[2]), 0, 0, 0]
                     nderiv = [-2*(pos[0] - pos1[0]), -2*(pos[1] - pos1[1]), -2*(pos[2] - pos1[2]), 0, 0, 0]
@@ -635,7 +634,7 @@ class Objective():
             if len(B) > 0:
                 B = np.array(B)
                 # constraints.append(B @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t) + h_gamma*h_min >= 0)
-                constraints.append(B @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t) + h_gamma*h_min >= self.N * 0.1)
+                constraints.append(B @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t) + h_gamma*h_min >= EPS)
 
             C = np.array(C)
             constraints.append(C @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t) + V_alpha*V_max <= delta)
@@ -690,7 +689,10 @@ class Objective():
         # print(B @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t.value) + h_gamma*h_min)
         # print(C @ (f_diag @ np.array(state_collect).flatten() + g_diag @ u_t.value) + V_alpha*V_max)
         return final_u, h_min, V_max, delta.value[0], h_os, h_cs, Vs, relaxed
-        
+
+    # def solve_nbf_jax(self, seed_u, last_delta=None, h_gamma=1, V_alpha=1):
+    #     f_diag = self.f_diag
+    #     g_diag = self.g_diag        
 
     ##########################################################
     # Distributed Version of Online Solution (MPC only)
