@@ -253,27 +253,27 @@ for t in range(trials):
         # print('ANDREAS INPUTS')
         # print(init_u)
 
-        if t == 0 and Hbar == H:
-            print('Figure For Singular Trajectories')
-            fig = plt.figure()
-            ax = fig.add_subplot(projection='3d')
-            times = np.linspace(0, Tf, H)
-            for i in range(N):
-                _, traj = generate_agent_states(init_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=dt)
-                ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
-                ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
+        # if t == 0 and Hbar == H:
+        #     print('Figure For Singular Trajectories')
+        #     fig = plt.figure()
+        #     ax = fig.add_subplot(projection='3d')
+        #     times = np.linspace(0, Tf, H)
+        #     for i in range(N):
+        #         _, traj = generate_agent_states(init_u[i], init_states[i], init_pos[i], model=Quadrocopter, dt=dt)
+        #         ax.plot(traj[:,0], traj[:,1], traj[:,2], label=i)
+        #         ax.scatter(traj[:,0], traj[:,1], traj[:,2], label=i)
 
-            for obsId, obs in obstacles.items():
-                co = obs['center']
-                ro = obs['radius']
-                obs_sphere = Sphere([co[0], co[1], co[2]], ro)
-                obs_sphere.plot_3d(ax, alpha=0.2, color='red')
-            for gId, g in goals.items():
-                cg = g['center']
-                rg = g['radius']
-                goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
-                goal_sphere.plot_3d(ax, alpha=0.2, color='green')
-            plt.show()
+        #     for obsId, obs in obstacles.items():
+        #         co = obs['center']
+        #         ro = obs['radius']
+        #         obs_sphere = Sphere([co[0], co[1], co[2]], ro)
+        #         obs_sphere.plot_3d(ax, alpha=0.2, color='red')
+        #     for gId, g in goals.items():
+        #         cg = g['center']
+        #         rg = g['radius']
+        #         goal_sphere = Sphere([cg[0], cg[1], cg[2]], rg)
+        #         goal_sphere.plot_3d(ax, alpha=0.2, color='green')
+        #     plt.show()
 
         # GENERATE SOLO ENERGIES
         # use the above inputs from generate_init_traj_quad to get the solo energies from initial trajectory
@@ -575,10 +575,10 @@ for t in range(trials):
     #     rs = s['radius']
     #     start_sphere = Sphere([cs[0], cs[1], cs[2]], rs)
     #     start_sphere.plot_3d(ax, alpha=0.2, color='blue')
-    # plt.savefig('{}/final_traj.png'.format(trial_dir))
-    # plt.clf()
-    # plt.close()
-    plt.show()
+    plt.savefig('{}/final_traj.png'.format(trial_dir))
+    plt.clf()
+    plt.close()
+    # plt.show()
     # print('PRINTING FINAL INPUTS')
     # print(np.round(final_us, 2))
 
