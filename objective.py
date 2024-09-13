@@ -160,6 +160,7 @@ class Objective():
             # thresh = 0.1 if curr_t > 0 else 0.01
             # thresh = 0.5 #if curr_t > 0 else 0.2
             thresh = 0.5 if self.notion in [0, 4] else 0.1
+            # thresh = 0.1 #if self.notion in [0, 4] else 0.1
             thresh_mult = 2 if self.N > 10 else 1
             if diff < (thresh * thresh_mult):
                 break

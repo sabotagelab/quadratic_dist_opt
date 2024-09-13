@@ -242,25 +242,25 @@ for t in range(trials):
         obj.solo_energies = solo_energies      
         fair_planner_time_start = time.time()
         converge_iter = 0
-        if curr_t > 0 and notion != 2:
-            seed_u = CURRENT_FAIR_TRAJ[:, curr_t:, :]
-        else:
-            if notion != 2:
-                # print('Running Fair Planner at time {}'.format(H-Hbar))
-                try:
-                    seed_u, converge_iter, fairness_res = obj.solve_distributed(init_u, final_us, curr_t, steps=fair_dist_iter, dyn='quad', orig_init_states=orig_init_states)
-                    seed_u = np.array(seed_u).reshape((N, H, control_input_size))
-                    seed_u = seed_u[:, curr_t:, :]
-                    CURRENT_FAIR_TRAJ = seed_u
+        # if curr_t > 0 and notion != 2:
+        #     seed_u = CURRENT_FAIR_TRAJ[:, curr_t:, :]
+        # else:
+        if notion != 2:
+            # print('Running Fair Planner at time {}'.format(H-Hbar))
+            try:
+                seed_u, converge_iter, fairness_res = obj.solve_distributed(init_u, final_us, curr_t, steps=fair_dist_iter, dyn='quad', orig_init_states=orig_init_states)
+                seed_u = np.array(seed_u).reshape((N, H, control_input_size))
+                seed_u = seed_u[:, curr_t:, :]
+                CURRENT_FAIR_TRAJ = seed_u
 
-                except Exception as e:
-                    print(e)
-                    print('Fair Planner error at time {}'.format(H-Hbar))
+            except Exception as e:
+                print(e)
+                print('Fair Planner error at time {}'.format(H-Hbar))
 
-                    # use solo trajs as ref
-                    seed_u = init_u
-                    fair_planner_solver_errors += 1
-                    fair_planner_error = True
+                # use solo trajs as ref
+                seed_u = init_u
+                fair_planner_solver_errors += 1
+                fair_planner_error = True
         runtimes_fair_planner.append(time.time() - fair_planner_time_start)
         fair_planner_iter.append(converge_iter)
 
